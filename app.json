@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Commerce Manager",
+    "slug": "commerce-manager",
+    "version": "0.1.0",
+    "orientation": "landscape",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.commercemanager.tablet",
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "SCHEDULE_EXACT_ALARM"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#F7F9FC"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "plugins": [
+      "expo-sqlite",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ],
+      "expo-document-picker",
+      "expo-notifications",
+      "expo-background-task",
+      "expo-updates"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "dc495988-69d5-49f2-8a4e-6845e2f59832"
+      }
+    },
+    "owner": "teroryx"
+  }
+}

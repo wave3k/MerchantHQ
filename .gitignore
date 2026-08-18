@@ -1,0 +1,16 @@
+node_modules/
+.expo/
+dist/
+dist-*/
+builds/
+web-build/
+*.log
+.DS_Store
+.bun-cache/
+.env
+.env.*
+!.env.example
+android/
+ios/
+
+.freebuff/

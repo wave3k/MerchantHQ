@@ -1,0 +1,72 @@
+[
+  {
+    "date": "2026-08-03",
+    "macrostructure": "Workbench · registre quotidien",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Commerce Manager · présences quotidiennes et écran de veille assombri avec horloge"
+  },
+  {
+    "date": "2026-07-30",
+    "macrostructure": "Ecosystem Index",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Commerce Manager · accueil Caisse sans statistiques et Dashboard analytique filtrable"
+  },
+  {
+    "date": "2026-07-29",
+    "macrostructure": "Component Playground",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Commerce Manager · créateur de tickets tactile, modulaire et imprimable"
+  },
+  {
+    "date": "2026-07-29",
+    "macrostructure": "Workbench",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Commerce Manager · caisse personnelle bilingue, tickets Android, thèmes accessibles et veille"
+  },
+  {
+    "date": "2026-07-28",
+    "macrostructure": "Workbench",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Commerce Manager · réglages simplifiés et formulaires adaptés au clavier"
+  },
+  {
+    "date": "2026-07-28",
+    "macrostructure": "Stat-Led",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Commerce Manager · statistiques réelles des ventes, produits et employés"
+  },
+  {
+    "date": "2026-07-28",
+    "macrostructure": "Narrative Workflow",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Commerce Manager · rendez-vous clients et rappels locaux sur tablette"
+  },
+  {
+    "date": "2026-07-27",
+    "macrostructure": "Split Studio",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Commerce Manager · caisse plein écran avec grands produits et panier fixe"
+  },
+  {
+    "date": "2026-07-27",
+    "macrostructure": "Catalogue",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Commerce Manager · catalogue produits lisible et personnel séparé des comptes"
+  },
+  {
+    "date": "2026-07-27",
+    "macrostructure": "Workbench",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Commerce Manager · application hors ligne pour tablette Android"
+  }
+]

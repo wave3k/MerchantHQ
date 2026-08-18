@@ -1,0 +1,10 @@
+{
+  "date": "2026-07-30",
+  "framework": "Expo SDK 54 / React Native",
+  "packageManager": "Bun",
+  "fontStack": "Space Grotesk + IBM Plex Sans + JetBrains Mono",
+  "palette": "Cobalt with Night and High Contrast variants",
+  "motion": "Static data views with restrained native press feedback",
+  "spacing": "4pt scale",
+  "signals": "Expo app with SQLite, cross-tablet Turso restore, Android Print Manager, local notifications, Caisse and Dashboard home tabs, responsive side rail, keyboard-safe sheets and bilingual tablet workbench"
+}
