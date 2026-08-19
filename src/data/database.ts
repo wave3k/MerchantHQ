@@ -28,7 +28,7 @@ import { createPasswordHash, verifyPassword } from "./security";
 import { withWriteTransaction } from "./transactions";
 
 const now = () => new Date().toISOString();
-const CURRENT_SCHEMA_VERSION = 8;
+const CURRENT_SCHEMA_VERSION = 9;
 
 export interface OwnerAccountRecord {
   name: string;
@@ -97,6 +97,12 @@ CREATE TABLE IF NOT EXISTS products (
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS clients (
@@ -364,6 +370,24 @@ async function migrateToVersion8(db: SQLiteDatabase): Promise<void> {
   }
 }
 
+async function migrateToVersion9(db: SQLiteDatabase): Promise<void> {
+  const timestamp = now();
+  await withWriteTransaction(db, async (transaction) => {
+    await transaction.execAsync(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        created_at TEXT NOT NULL
+      );
+      INSERT OR IGNORE INTO categories (name, created_at) VALUES ('Général', '${timestamp}');
+      INSERT OR IGNORE INTO categories (name, created_at)
+        SELECT DISTINCT category, '${timestamp}'
+        FROM products
+        WHERE category <> '';
+    `);
+  });
+}
+
 export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   await db.execAsync("PRAGMA journal_mode = WAL;");
   await db.execAsync("PRAGMA foreign_keys = ON;");
@@ -405,6 +429,7 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   const orderColumns = await tableColumns(db, "orders");
   const productColumns = await tableColumns(db, "products");
   const appointmentColumns = await tableColumns(db, "appointments");
+  const categoriesColumns = await tableColumns(db, "categories");
   const needsEmployeeMigration =
     !userColumns.has("employee_id") ||
     !orderColumns.has("employee_id") ||
@@ -430,6 +455,9 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   }
   if (meta && meta.version < 8) {
     await migrateToVersion8(db);
+  }
+  if (categoriesColumns.size === 0 || (meta && meta.version < 9)) {
+    await migrateToVersion9(db);
   }
 
   if (!meta) {
@@ -1118,6 +1146,53 @@ export async function saveAttendance(
   });
 }
 
+async function ensureCategory(
+  db: SQLiteDatabase,
+  name: string,
+  timestamp: string,
+): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  await db.runAsync(
+    "INSERT OR IGNORE INTO categories (name, created_at) VALUES (?, ?)",
+    trimmed,
+    timestamp,
+  );
+}
+
+export async function listCategories(db: SQLiteDatabase): Promise<string[]> {
+  const rows = await db.getAllAsync<{ name: string }>(
+    `SELECT name FROM (
+       SELECT name FROM categories
+       UNION
+       SELECT DISTINCT category AS name FROM products WHERE category <> ''
+     )
+     ORDER BY CASE WHEN name = 'Général' THEN 0 ELSE 1 END, name COLLATE NOCASE`,
+  );
+  return rows.map((row) => row.name);
+}
+
+export async function createCategory(
+  db: SQLiteDatabase,
+  name: string,
+  actor: User,
+): Promise<void> {
+  const trimmed = name.trim();
+  if (trimmed.length < 2) {
+    throw new Error(
+      "Le nom de la catégorie doit contenir au moins 2 caractères.",
+    );
+  }
+  const timestamp = now();
+  await ensureCategory(db, trimmed, timestamp);
+  await writeLog(db, actor, {
+    action: "create",
+    entityType: "category",
+    description: `${actor.name} a créé la catégorie ${trimmed}.`,
+    newValue: { name: trimmed },
+  });
+}
+
 export async function listProducts(db: SQLiteDatabase): Promise<Product[]> {
   return db.getAllAsync<Product>(
     `SELECT * FROM products WHERE is_active = 1
@@ -1135,6 +1210,7 @@ export async function saveProduct(
   productId?: number,
 ): Promise<void> {
   const timestamp = now();
+  await ensureCategory(db, input.category.trim() || "Général", timestamp);
   if (productId) {
     const previous = await db.getFirstAsync<Product>(
       "SELECT * FROM products WHERE id = ?",

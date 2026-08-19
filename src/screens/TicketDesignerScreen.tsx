@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -151,10 +152,12 @@ function TicketBlockPreview({
   block,
   establishment,
   itemDetails,
+  logoDataUri,
 }: {
   block: TicketBlock;
   establishment: TicketEstablishment;
   itemDetails: boolean;
+  logoDataUri: string | null;
 }) {
   const baseText = {
     color: colors.ticketInk,
@@ -208,9 +211,17 @@ function TicketBlockPreview({
           { alignItems: alignItemsValue(block.alignment) },
         ]}
       >
-        <View style={styles.previewLogoMonogram}>
-          <Text style={styles.previewLogoMonogramText}>CM</Text>
-        </View>
+        {logoDataUri ? (
+          <Image
+            accessibilityLabel="Logo de l’établissement"
+            source={{ uri: logoDataUri }}
+            style={styles.previewLogoImage}
+          />
+        ) : (
+          <View style={styles.previewLogoMonogram}>
+            <Text style={styles.previewLogoMonogramText}>CM</Text>
+          </View>
+        )}
       </View>
     );
   }
@@ -258,6 +269,7 @@ function DraggableTicketRow({
   dropTarget,
   establishment,
   itemDetails,
+  logoDataUri,
   onSelect,
   onMove,
   onDragTarget,
@@ -269,6 +281,7 @@ function DraggableTicketRow({
   dropTarget: boolean;
   establishment: TicketEstablishment;
   itemDetails: boolean;
+  logoDataUri: string | null;
   onSelect: () => void;
   onMove: (from: number, to: number) => void;
   onDragTarget: (index: number | null) => void;
@@ -374,6 +387,7 @@ function DraggableTicketRow({
           block={block}
           establishment={establishment}
           itemDetails={itemDetails}
+          logoDataUri={logoDataUri}
         />
         {!block.enabled ? (
           <View style={styles.hiddenBadge}>
@@ -757,6 +771,7 @@ export function TicketDesignerScreen({
                     index={index}
                     itemDetails={designer.layout.itemDetails}
                     key={block.id}
+                    logoDataUri={designer.logoDataUri}
                     onDragTarget={setDropTarget}
                     onMove={(from, to) =>
                       updateLayout((layout) => ({
@@ -1327,6 +1342,11 @@ const styles = StyleSheet.create({
   },
   previewLogoLine: {
     width: "100%",
+  },
+  previewLogoImage: {
+    height: 44,
+    resizeMode: "contain",
+    width: 44,
   },
   previewLogoMonogram: {
     alignItems: "center",

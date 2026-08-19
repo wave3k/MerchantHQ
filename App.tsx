@@ -730,7 +730,7 @@ export default function App() {
     <SafeAreaView style={styles.safe}>
       <StatusBar style={activeTheme === "night" ? "light" : "dark"} />
       <SQLiteProvider
-        databaseName="commerce-manager.db"
+        databaseName="commerce-manager-public.db"
         onError={(error) => {
           console.error("SQLite initialization failed", error);
           setDatabaseError(error.message);

@@ -8,7 +8,7 @@ import { getCloudBackupConfig, syncCloudBackup } from "./cloudBackup";
 export const CLOUD_BACKUP_TASK = "commerce-manager-cloud-backup";
 
 TaskManager.defineTask(CLOUD_BACKUP_TASK, async () => {
-  const db = await openDatabaseAsync("commerce-manager.db");
+  const db = await openDatabaseAsync("commerce-manager-public.db");
   try {
     await initializeDatabase(db);
     await syncCloudBackup(db);

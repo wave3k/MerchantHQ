@@ -12,6 +12,7 @@ import Icon from "../components/Icon";
 import type { IconName } from "../components/Icon";
 import * as SecureStore from "../data/secureStore";
 import { useEffect, useState } from "react";
+import { Image } from "react-native";
 
 import { AppButton } from "../components/AppButton";
 import { Page } from "../components/Page";
@@ -31,6 +32,7 @@ import {
   seedDemoData,
   setSetting,
 } from "../data/database";
+import { pickShopLogo } from "../data/shopLogo";
 import {
   prepareDeviceNotifications,
   sendTestNotification,
@@ -167,6 +169,7 @@ export function SettingsScreen({
   const [paymentCash, setPaymentCash] = useState(true);
   const [paymentMobile, setPaymentMobile] = useState(true);
   const [paymentCard, setPaymentCard] = useState(true);
+  const [logoUri, setLogoUri] = useState<string | null>(null);
   const [busy, setBusy] = useState<
     | "save"
     | "preferences"
@@ -199,6 +202,7 @@ export function SettingsScreen({
       getSetting(db, "payment_cash"),
       getSetting(db, "payment_mobile_money"),
       getSetting(db, "payment_card"),
+      getSetting(db, "shop_logo"),
     ]).then(([
       name,
       developerUntil,
@@ -217,6 +221,7 @@ export function SettingsScreen({
       cash,
       mobile,
       card,
+      savedLogo,
     ]) => {
       setShopName(name ?? "Ma boutique");
       setDeveloperMode(Number(developerUntil) > Date.now());
@@ -237,6 +242,7 @@ export function SettingsScreen({
       setPaymentCash(cash !== "0");
       setPaymentMobile(mobile !== "0");
       setPaymentCard(card !== "0");
+      setLogoUri(savedLogo || null);
     });
   }, [db]);
 
@@ -365,12 +371,30 @@ export function SettingsScreen({
         ["payment_cash", paymentCash ? "1" : "0"],
         ["payment_mobile_money", paymentMobile ? "1" : "0"],
         ["payment_card", paymentCard ? "1" : "0"],
+        ["shop_logo", logoUri ?? ""],
       ]);
       Alert.alert("Établissement enregistré");
     } catch (caught) {
       Alert.alert(
         "Enregistrement impossible",
         caught instanceof Error ? caught.message : "Les informations n’ont pas été enregistrées.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function pickLogo() {
+    setBusy("establishment");
+    try {
+      const uri = await pickShopLogo();
+      if (uri) setLogoUri(uri);
+    } catch (caught) {
+      Alert.alert(
+        "Logo indisponible",
+        caught instanceof Error
+          ? caught.message
+          : "Le logo n’a pas pu être chargé.",
       );
     } finally {
       setBusy(null);
@@ -672,6 +696,35 @@ export function SettingsScreen({
               onChange={setPaymentCard}
               value={paymentCard}
             />
+          </View>
+          <View style={styles.logoRow}>
+            <View style={styles.logoPreview}>
+              {logoUri ? (
+                <Image
+                  accessibilityLabel="Logo de l’établissement"
+                  source={{ uri: logoUri }}
+                  style={styles.logoImage}
+                />
+              ) : (
+                <Icon color={colors.muted} name="Store" size={30} />
+              )}
+            </View>
+            <View style={styles.logoActions}>
+              <AppButton
+                icon="Image"
+                label="Choisir le logo"
+                loading={busy === "establishment"}
+                onPress={() => void pickLogo()}
+                tone="secondary"
+              />
+              {logoUri ? (
+                <AppButton
+                  label="Retirer le logo"
+                  onPress={() => setLogoUri(null)}
+                  tone="ghost"
+                />
+              ) : null}
+            </View>
           </View>
           <AppButton
             icon="Save"
@@ -1002,6 +1055,33 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     borderWidth: 1,
     overflow: "hidden",
+  },
+  logoRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space.sm,
+  },
+  logoPreview: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceStrong,
+    borderColor: colors.ruleStrong,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    height: 72,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 72,
+  },
+  logoImage: {
+    height: "100%",
+    resizeMode: "contain",
+    width: "100%",
+  },
+  logoActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space.xs,
   },
   toggleRow: {
     alignItems: "center",

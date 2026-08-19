@@ -88,7 +88,7 @@ export async function loadTicketDesigner(
     getSetting(db, "opening_hours"),
     getSetting(db, "ticket_header"),
     getSetting(db, "ticket_footer"),
-    Promise.resolve<string | null>(null),
+    getSetting(db, "shop_logo"),
   ]);
   return {
     layout:
@@ -98,7 +98,7 @@ export async function loadTicketDesigner(
         footer: legacyFooter ?? "",
       }),
     autoPrint: autoPrint !== "0",
-    logoDataUri,
+    logoDataUri: logoDataUri || null,
     establishment: {
       shopName: shopName ?? "Ma boutique",
       address: address ?? "",

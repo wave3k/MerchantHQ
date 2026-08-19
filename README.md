@@ -94,7 +94,7 @@ bun run export:android
 
 ## Stockage et sécurité
 
-- La base principale se nomme `commerce-manager.db`.
+- La base principale se nomme `commerce-manager-public.db`.
 - SQLite utilise le mode WAL et les clés étrangères.
 - Une vente, ses lignes, les mouvements de stock et son log sont enregistrés
   dans une seule transaction.

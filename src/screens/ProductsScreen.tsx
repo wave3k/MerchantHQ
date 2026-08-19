@@ -19,6 +19,8 @@ import { TextField } from "../components/TextField";
 import {
   adjustStock,
   archiveProduct,
+  createCategory,
+  listCategories,
   listProducts,
   saveProduct,
 } from "../data/database";
@@ -49,6 +51,9 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
   const { width } = useWindowDimensions();
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [newCategory, setNewCategory] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
   const [stockOpen, setStockOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -65,7 +70,12 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
   const twoColumns = width >= 960;
 
   async function load() {
-    setProducts(await listProducts(db));
+    const [loadedProducts, loadedCategories] = await Promise.all([
+      listProducts(db),
+      listCategories(db),
+    ]);
+    setProducts(loadedProducts);
+    setCategories(loadedCategories);
   }
 
   useEffect(() => {
@@ -74,18 +84,26 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
 
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("fr");
-    if (!query) return products;
-    return products.filter((product) =>
-      [product.name, product.category, product.sku ?? ""]
+    return products.filter((product) => {
+      if (
+        categoryFilter &&
+        product.category.toLocaleLowerCase("fr") !==
+          categoryFilter.toLocaleLowerCase("fr")
+      ) {
+        return false;
+      }
+      if (!query) return true;
+      return [product.name, product.category, product.sku ?? ""]
         .join(" ")
         .toLocaleLowerCase("fr")
-        .includes(query),
-    );
-  }, [products, search]);
+        .includes(query);
+    });
+  }, [products, search, categoryFilter]);
 
   function openCreate() {
     setEditing(null);
     setDraft(emptyDraft);
+    setNewCategory("");
     setPriceText("");
     setStockText("0");
     setThresholdText("5");
@@ -117,6 +135,29 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
     setStockReason("");
     setFormError("");
     setStockOpen(true);
+  }
+
+  async function submitNewCategory() {
+    const name = newCategory.trim();
+    if (name.length < 2) {
+      setFormError("Le nom de la catégorie doit contenir au moins 2 caractères.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await createCategory(db, name, user);
+      setDraft((value) => ({ ...value, category: name }));
+      setNewCategory("");
+      await load();
+    } catch (caught) {
+      setFormError(
+        caught instanceof Error
+          ? caught.message
+          : "La catégorie n’a pas pu être créée.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submitProduct() {
@@ -233,6 +274,42 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
         placeholder="Rechercher par nom, catégorie ou code"
         value={search}
       />
+      {categories.length > 0 ? (
+        <View style={styles.categoryChips}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: categoryFilter === null }}
+            onPress={() => setCategoryFilter(null)}
+            style={({ pressed }) => [
+              styles.categoryChip,
+              categoryFilter === null && styles.categoryChipActive,
+              pressed && styles.categoryChipPressed,
+            ]}
+          >
+            <Text style={styles.categoryChipText}>Toutes</Text>
+          </Pressable>
+          {categories.map((category) => {
+            const active = categoryFilter === category;
+            return (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                key={category}
+                onPress={() =>
+                  setCategoryFilter(active ? null : category)
+                }
+                style={({ pressed }) => [
+                  styles.categoryChip,
+                  active && styles.categoryChipActive,
+                  pressed && styles.categoryChipPressed,
+                ]}
+              >
+                <Text style={styles.categoryChipText}>{category}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
       {filtered.length === 0 ? (
         <EmptyState
           action={
@@ -412,15 +489,66 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
             placeholder="RIZ-5KG"
             value={draft.sku}
           />
-          <TextField
-            containerStyle={styles.flexField}
-            label="Catégorie"
-            onChangeText={(category) =>
-              setDraft((value) => ({ ...value, category }))
-            }
-            placeholder="Alimentation"
-            value={draft.category}
-          />
+          <View style={styles.flexField}>
+            <Text style={styles.categoryLabel}>Catégorie</Text>
+            <View style={styles.categoryChoices}>
+              {categories.map((category) => {
+                const selected =
+                  draft.category.toLocaleLowerCase("fr") ===
+                  category.toLocaleLowerCase("fr");
+                return (
+                  <Pressable
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    key={category}
+                    onPress={() =>
+                      setDraft((value) => ({ ...value, category }))
+                    }
+                    style={({ pressed }) => [
+                      styles.categoryChoice,
+                      selected && styles.categoryChoiceSelected,
+                      pressed && styles.categoryChoicePressed,
+                    ]}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.categoryChoiceText,
+                        selected && styles.categoryChoiceTextSelected,
+                      ]}
+                    >
+                      {category}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={styles.newCategoryRow}>
+              <TextField
+                containerStyle={styles.flexField}
+                label="Nouvelle catégorie"
+                onChangeText={setNewCategory}
+                onSubmitEditing={() => void submitNewCategory()}
+                placeholder="Alimentation"
+                value={newCategory}
+              />
+              <Pressable
+                accessibilityRole="button"
+                disabled={busy}
+                onPress={() => void submitNewCategory()}
+                style={({ pressed }) => [
+                  styles.newCategoryButton,
+                  pressed && styles.newCategoryButtonPressed,
+                ]}
+              >
+                <Icon
+                  color={colors.accentInk}
+                  name="Plus"
+                  size={18}
+                />
+              </Pressable>
+            </View>
+          </View>
         </View>
         <TextField
           keyboardType="number-pad"
@@ -772,6 +900,89 @@ const styles = StyleSheet.create({
   stockModeChoiceTextSelected: {
     color: colors.accentDark,
     fontFamily: fonts.bodySemibold,
+  },
+  categoryChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space.xs,
+  },
+  categoryChip: {
+    backgroundColor: colors.surfaceStrong,
+    borderColor: colors.ruleStrong,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    minHeight: 32,
+    justifyContent: "center",
+    paddingHorizontal: space.sm,
+  },
+  categoryChipActive: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
+  },
+  categoryChipPressed: {
+    opacity: 0.72,
+    transform: [{ translateY: 1 }],
+  },
+  categoryChipText: {
+    color: colors.muted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+  },
+  categoryLabel: {
+    color: colors.muted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    marginBottom: space.xs,
+  },
+  categoryChoices: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space.xs,
+    marginBottom: space.sm,
+  },
+  categoryChoice: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceStrong,
+    borderColor: colors.ruleStrong,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    minHeight: 32,
+    justifyContent: "center",
+    paddingHorizontal: space.sm,
+  },
+  categoryChoiceSelected: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
+  },
+  categoryChoicePressed: {
+    opacity: 0.72,
+    transform: [{ translateY: 1 }],
+  },
+  categoryChoiceText: {
+    color: colors.muted,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+  },
+  categoryChoiceTextSelected: {
+    color: colors.accentDark,
+    fontFamily: fonts.bodySemibold,
+  },
+  newCategoryRow: {
+    alignItems: "flex-end",
+    flexDirection: "row",
+    gap: space.xs,
+  },
+  newCategoryButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
+    height: 48,
+    justifyContent: "center",
+    marginBottom: 18,
+    width: 48,
+  },
+  newCategoryButtonPressed: {
+    backgroundColor: colors.accentDark,
   },
   error: {
     color: colors.error,

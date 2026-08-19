@@ -39,7 +39,7 @@ la lisibilité des chiffres, des produits ou du panier.
 - Les produits, données et actions gardent les mêmes tailles tactiles.
 - L’accent bleu couvre moins de 5 % de chaque vue.
 - Les couleurs succès, avertissement et erreur conservent leur signification.
-- La base `commerce-manager.db`, les clés SecureStore et le format des sauvegardes
+- La base `commerce-manager-public.db`, les clés SecureStore et le format des sauvegardes
   restent inchangés pour préserver toutes les données existantes.
 
 ## Variantes accessibles

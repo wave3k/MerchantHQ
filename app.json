@@ -18,7 +18,8 @@
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./public/favicon.ico"
     },
     "ios": {
       "supportsTablet": true,
@@ -35,6 +36,12 @@
         }
       ],
       "expo-document-picker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Autoriser Commerce Manager à accéder aux photos pour choisir le logo de l’établissement."
+        }
+      ],
       "expo-notifications",
       "expo-background-task",
       "expo-updates"
