@@ -70,6 +70,8 @@ import { TicketDesignerScreen } from "./src/screens/TicketDesignerScreen";
 import { Screensaver } from "./src/components/Screensaver";
 import { AppButton } from "./src/components/AppButton";
 import { CashRegisterIcon } from "./src/components/CashRegisterIcon";
+import { logoRegistry } from "./src/components/logos";
+import type { LogoName } from "./src/components/logos";
 import { ModalSheet } from "./src/components/ModalSheet";
 import { TextField } from "./src/components/TextField";
 import { t } from "./src/i18n";
@@ -98,7 +100,7 @@ const navigation: Record<
   dashboard: [
     { key: "home_dashboard", label: "Accueil", icon: "House" },
     { key: "statistics", label: "Statistiques", icon: "ChartColumn" },
-    { key: "expenses", label: "Dépenses", icon: "Coins" },
+    { key: "expenses", label: "D�penses", icon: "Coins" },
   ],
   caisse: [
     { key: "home_caisse", label: "Accueil", icon: "House" },
@@ -110,17 +112,23 @@ const navigation: Record<
   boutique: [
     { key: "home_boutique", label: "Accueil", icon: "House" },
     { key: "products", label: "Produits", icon: "Package" },
-    { key: "attendance", label: "Présences", icon: "ClipboardCheck" },
-    { key: "team", label: "Employés", icon: "UserCog" },
-    { key: "logs", label: "Activité", icon: "Activity" },
-    { key: "settings", label: "Réglages", icon: "Settings" },
+    { key: "attendance", label: "Pr�sences", icon: "ClipboardCheck" },
+    { key: "team", label: "Employ�s", icon: "UserCog" },
+    { key: "logs", label: "Activit�", icon: "Activity" },
+    { key: "settings", label: "R�glages", icon: "Settings" },
   ],
 };
 
-function LoadingScreen({ label }: { label: string }) {
+function LoadingScreen({
+  label,
+  logo,
+}: {
+  label: string;
+  logo?: React.ReactNode;
+}) {
   return (
     <View style={styles.loading}>
-      <CashRegisterIcon size={64} />
+      {logo ?? <CashRegisterIcon size={64} />}
       <ActivityIndicator color={colors.accent} size="large" />
       <Text style={styles.loadingText}>{t(label)}</Text>
     </View>
@@ -145,20 +153,43 @@ function Application() {
   const [dashboardCodeError, setDashboardCodeError] = useState("");
   const [checkingDashboardCode, setCheckingDashboardCode] = useState(false);
   const [shopName, setShopName] = useState("Ma boutique");
+  const [appLogo, setAppLogo] = useState<LogoName>("vente-cash");
+  const [logoPrimary, setLogoPrimary] = useState("#1D55C5");
+  const [logoSecondary, setLogoSecondary] = useState("#E8EFFC");
   const [, setPreferencesRevision] = useState(0);
   const lastActivity = useRef(Date.now());
   const backgroundAt = useRef<number | null>(null);
   const compact = width < 1100;
 
+  const logoElement = (() => {
+    const LogoComponent = logoRegistry[appLogo];
+    return LogoComponent ? (
+      <LogoComponent
+        accessibilityLabel="MerchantHQ"
+        color={logoPrimary}
+        detail={logoSecondary}
+        size={64}
+      />
+    ) : (
+      <CashRegisterIcon size={64} />
+    );
+  })();
+
   async function refreshPreferences() {
-    const [name, primary, secondary, rate, language] = await Promise.all([
+    const [name, primary, secondary, rate, language, savedLogo, savedPrimary, savedSecondary] = await Promise.all([
       getSetting(db, "shop_name"),
       getSetting(db, "currency_primary"),
       getSetting(db, "currency_secondary"),
       getSetting(db, "currency_rate"),
       getSetting(db, "language"),
+      getSetting(db, "app_logo"),
+      getSetting(db, "logo_primary"),
+      getSetting(db, "logo_secondary"),
     ]);
     if (name) setShopName(name);
+    if (savedLogo) setAppLogo(savedLogo as LogoName);
+    if (savedPrimary) setLogoPrimary(savedPrimary);
+    if (savedSecondary) setLogoSecondary(savedSecondary);
     configureFormatting({
       primary: (primary as CurrencyCode) ?? "CDF",
       secondary:
@@ -189,7 +220,7 @@ function Application() {
       await registerCloudBackupTask();
       await syncCloudBackup(db);
     })().catch(() => {
-      // Une erreur réseau reste dans la file d’attente locale.
+      // Une erreur r�seau reste dans la file d�attente locale.
     });
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") {
@@ -197,7 +228,7 @@ function Application() {
           () => undefined,
         );
         void syncCloudBackup(db).catch(() => {
-          // Nouvelle tentative silencieuse à la prochaine reprise.
+          // Nouvelle tentative silencieuse � la prochaine reprise.
         });
       }
     });
@@ -208,15 +239,15 @@ function Application() {
     const compatible = update.schemaVersion <= BACKUP_FORMAT_VERSION;
     const versionLine =
       update.appVersion && update.appVersion !== "inconnue"
-        ? `\nVersion de la copie : ${update.appVersion}. Version installée : ${APP_VERSION}.`
+        ? `\nVersion de la copie : ${update.appVersion}. Version install�e : ${APP_VERSION}.`
         : "";
     Alert.alert(
       compatible
-        ? "Sauvegarde plus récente trouvée"
-        : "Mise à jour de l’application requise",
+        ? "Sauvegarde plus r�cente trouv�e"
+        : "Mise � jour de l�application requise",
       compatible
-        ? `Une autre tablette a enregistré une copie le ${formatDateTime(update.snapshotAt)}.${versionLine}\n\nLa restaurer remplacera les données actuellement présentes sur cette tablette.`
-        : `La dernière copie vient de MerchantHQ ${update.appVersion}. Mettez cette tablette à jour avant de restaurer ses données.`,
+        ? `Une autre tablette a enregistr� une copie le ${formatDateTime(update.snapshotAt)}.${versionLine}\n\nLa restaurer remplacera les donn�es actuellement pr�sentes sur cette tablette.`
+        : `La derni�re copie vient de MerchantHQ ${update.appVersion}. Mettez cette tablette � jour avant de restaurer ses donn�es.`,
       compatible
         ? [
             { text: "Plus tard", style: "cancel" },
@@ -240,15 +271,15 @@ function Application() {
       setScreen("home_caisse");
       setSaleFullscreen(false);
       Alert.alert(
-        "Sauvegarde restaurée",
-        "Les dernières données de la boutique sont maintenant disponibles sur cette tablette.",
+        "Sauvegarde restaur�e",
+        "Les derni�res donn�es de la boutique sont maintenant disponibles sur cette tablette.",
       );
     } catch (caught) {
       Alert.alert(
         "Restauration impossible",
         caught instanceof Error
           ? caught.message
-          : "La copie Turso n’a pas pu être restaurée.",
+          : "La copie Turso n�a pas pu �tre restaur�e.",
       );
     } finally {
       setRestoringBackup(false);
@@ -302,14 +333,14 @@ function Application() {
 
   async function openDashboard() {
     if (!dashboardCode) {
-      setDashboardCodeError("Entrez le code du compte Propriétaire.");
+      setDashboardCodeError("Entrez le code du compte Propri�taire.");
       return;
     }
     setCheckingDashboardCode(true);
     setDashboardCodeError("");
     try {
       if (!(await verifyBossPassword(db, dashboardCode))) {
-        setDashboardCodeError("Code incorrect. Vérifiez puis réessayez.");
+        setDashboardCodeError("Code incorrect. V�rifiez puis r�essayez.");
         return;
       }
       setDashboardAccessOpen(false);
@@ -319,7 +350,7 @@ function Application() {
       setDashboardCodeError(
         caught instanceof Error
           ? caught.message
-          : "Le code n’a pas pu être vérifié.",
+          : "Le code n�a pas pu �tre v�rifi�.",
       );
     } finally {
       setCheckingDashboardCode(false);
@@ -370,7 +401,7 @@ function Application() {
   useEffect(() => {
     if (!user) return;
     void prepareDeviceNotifications(db).catch(() => {
-      // Les fonctions métier restent disponibles si Android refuse les notifications.
+      // Les fonctions m�tier restent disponibles si Android refuse les notifications.
     });
     const subscription = subscribeToNotificationNavigation((target) => {
       navigateTo(target);
@@ -379,7 +410,7 @@ function Application() {
   }, [db, user]);
 
   if (restoringBackup) {
-    return <LoadingScreen label="Restauration de la boutique…" />;
+    return <LoadingScreen label="Restauration de la boutique…" logo={logoElement} />;
   }
 
   if (!user) {
@@ -563,7 +594,7 @@ function Application() {
                 </Text>
                 <View style={styles.offlineRow}>
                   <View style={styles.offlineDot} />
-                  <Text style={styles.offlineText}>Prêt à vendre</Text>
+                  <Text style={styles.offlineText}>Pr�t � vendre</Text>
                 </View>
               </View>
             </View>
@@ -667,14 +698,14 @@ function Application() {
 
       <ModalSheet
         onClose={closeDashboardAccess}
-        subtitle="Entrez le mot de passe défini lors de la création du compte Propriétaire."
-        title="Accès au Dashboard"
+        subtitle="Entrez le mot de passe d�fini lors de la cr�ation du compte Propri�taire."
+        title="Acc�s au Dashboard"
         visible={dashboardAccessOpen}
         width={440}
       >
         <TextField
           error={dashboardCodeError || undefined}
-          label="Code du compte Propriétaire"
+          label="Code du compte Propri�taire"
           onChangeText={(value) => {
             setDashboardCode(value);
             if (dashboardCodeError) setDashboardCodeError("");
@@ -713,8 +744,8 @@ export default function App() {
   });
   const [databaseError, setDatabaseError] = useState("");
 
-  if (!fontsLoaded) {
-    return <LoadingScreen label="Préparation de l’interface…" />;
+if (!fontsLoaded) {
+    return <LoadingScreen label="Préparation de l'interface…" />;
   }
 
   if (databaseError) {
@@ -723,7 +754,7 @@ export default function App() {
         <View style={styles.databaseError}>
           <Icon name="TriangleAlert" size={30} color={colors.error} />
           <Text style={styles.databaseErrorTitle}>
-            Base de données indisponible
+            Base de donn�es indisponible
           </Text>
           <Text style={styles.databaseErrorMessage}>{databaseError}</Text>
         </View>
@@ -740,7 +771,7 @@ export default function App() {
           console.error("SQLite initialization failed", error);
           setDatabaseError(error.message);
           Alert.alert(
-            "Base de données indisponible",
+            "Base de donn�es indisponible",
             error.message,
           );
         }}
@@ -1060,3 +1091,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
+

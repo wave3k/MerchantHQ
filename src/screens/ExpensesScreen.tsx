@@ -1,4 +1,4 @@
-﻿import type { SQLiteDatabase } from "expo-sqlite";
+import type { SQLiteDatabase } from "expo-sqlite";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
 import { useEffect, useMemo, useState } from "react";
 
@@ -86,7 +86,7 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
   async function submitNewCategory() {
     const name = newCategory.trim();
     if (name.length < 2) {
-      setFormError("Le nom de la catÃ©gorie doit contenir au moins 2 caractÃ¨res.");
+      setFormError("Le nom de la catégorie doit contenir au moins 2 caractères.");
       return;
     }
     setBusy(true);
@@ -104,7 +104,7 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
       setFormError(
         caught instanceof Error
           ? caught.message
-          : "La catÃ©gorie nâ€™a pas pu Ãªtre crÃ©Ã©e.",
+          : "La catégorie n’a pas pu être créée.",
       );
     } finally {
       setBusy(false);
@@ -134,7 +134,7 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
       setFormError(
         caught instanceof Error
           ? caught.message
-          : "La dÃ©pense nâ€™a pas pu Ãªtre enregistrÃ©e.",
+          : "La dépense n’a pas pu être enregistrée.",
       );
     } finally {
       setBusy(false);
@@ -143,8 +143,8 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
 
   function confirmDelete(expense: Expense) {
     Alert.alert(
-      "Retirer la dÃ©pense",
-      `Retirer la dÃ©pense de ${formatMoney(expense.amount)} (${expense.category_name}) ?`,
+      "Retirer la dépense",
+      `Retirer la dépense de ${formatMoney(expense.amount)} (${expense.category_name}) ?`,
       [
         { text: "Annuler", style: "cancel" },
         {
@@ -160,7 +160,7 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
                   "Suppression impossible",
                   caught instanceof Error
                     ? caught.message
-                    : "La dÃ©pense nâ€™a pas Ã©tÃ© retirÃ©e.",
+                    : "La dépense n’a pas été retirée.",
                 );
               }
             })();
@@ -174,15 +174,15 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
     <Page
       action={
         canManage ? (
-          <AppButton icon="Plus" label="Ajouter une dÃ©pense" onPress={openCreate} />
+          <AppButton icon="Plus" label="Ajouter une dépense" onPress={openCreate} />
         ) : undefined
       }
-      description="Suivez les sorties dâ€™argent de la boutique : loyers, marchandises, salaires et plus."
-      title="DÃ©penses"
+      description="Suivez les sorties d’argent de la boutique : loyers, marchandises, salaires et plus."
+      title="Dépenses"
     >
       <SearchField
         onChangeText={setSearch}
-        placeholder="Rechercher par catÃ©gorie, note ou auteur"
+        placeholder="Rechercher par catégorie, note ou auteur"
         value={search}
       />
       {categories.length > 0 ? (
@@ -225,7 +225,7 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
             canManage && expenses.length === 0 ? (
               <AppButton
                 icon="Plus"
-                label="Ajouter la premiÃ¨re dÃ©pense"
+                label="Ajouter la première dépense"
                 onPress={openCreate}
               />
             ) : undefined
@@ -233,16 +233,16 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
           icon="Coins"
           message={
             expenses.length
-              ? "Modifiez les mots recherchÃ©s."
-              : "Enregistrez les sorties dâ€™argent de la boutique pour suivre vos charges."
+              ? "Modifiez les mots recherchés."
+              : "Enregistrez les sorties d’argent de la boutique pour suivre vos charges."
           }
-          title={expenses.length ? "Aucun rÃ©sultat" : "Aucune dÃ©pense"}
+          title={expenses.length ? "Aucun résultat" : "Aucune dépense"}
         />
       ) : (
         <>
           <View style={styles.expenseSummary}>
             <Text style={styles.expenseCount}>
-              {filtered.length} dÃ©pense{filtered.length > 1 ? "s" : ""}
+              {filtered.length} dépense{filtered.length > 1 ? "s" : ""}
             </Text>
             <Text style={styles.expenseTotal}>{formatMoney(total)}</Text>
           </View>
@@ -255,7 +255,7 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
                     {canManage ? (
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel={`Retirer la dÃ©pense de ${expense.category_name}`}
+                        accessibilityLabel={`Retirer la dépense de ${expense.category_name}`}
                         hitSlop={8}
                         onPress={() => confirmDelete(expense)}
                         style={({ pressed }) => [
@@ -271,7 +271,7 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
                     {expense.notes || "Sans note"}
                   </Text>
                   <Text style={styles.expenseMeta}>
-                    {formatDateTime(expense.created_at)} Â· {expense.created_by_name}
+                    {formatDateTime(expense.created_at)} · {expense.created_by_name}
                   </Text>
                 </View>
                 <Text style={styles.expenseAmount}>
@@ -285,12 +285,12 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
 
       <ModalSheet
         onClose={() => setEditorOpen(false)}
-        subtitle="La dÃ©pense sera inscrite dans lâ€™historique et lâ€™activitÃ©."
-        title="Nouvelle dÃ©pense"
+        subtitle="La dépense sera inscrite dans l’historique et l’activité."
+        title="Nouvelle dépense"
         visible={editorOpen}
       >
         <View>
-          <Text style={styles.categoryLabel}>CatÃ©gorie</Text>
+          <Text style={styles.categoryLabel}>Catégorie</Text>
           <View style={styles.categoryChoices}>
             {categories.map((category) => {
               const selected = selectedCategoryId === category.id;
@@ -322,10 +322,10 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
           <View style={styles.newCategoryRow}>
             <TextField
               containerStyle={styles.flexField}
-              label="Nouvelle catÃ©gorie"
+              label="Nouvelle catégorie"
               onChangeText={setNewCategory}
               onSubmitEditing={() => void submitNewCategory()}
-              placeholder="Ex. RÃ©parations"
+              placeholder="Ex. Réparations"
               value={newCategory}
             />
             <Pressable
@@ -358,7 +358,7 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
         <View style={styles.modalActions}>
           <AppButton
             icon="Coins"
-            label="Enregistrer la dÃ©pense"
+            label="Enregistrer la dépense"
             loading={busy}
             onPress={() => void submitExpense()}
           />

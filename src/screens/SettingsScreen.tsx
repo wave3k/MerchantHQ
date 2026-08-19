@@ -33,6 +33,9 @@ import {
   setSetting,
 } from "../data/database";
 import { pickShopLogo } from "../data/shopLogo";
+import { LogoPicker } from "../components/LogoPicker";
+import { logoRegistry } from "../components/logos";
+import type { LogoName } from "../components/logos";
 import {
   prepareDeviceNotifications,
   sendTestNotification,
@@ -170,6 +173,10 @@ export function SettingsScreen({
   const [paymentMobile, setPaymentMobile] = useState(true);
   const [paymentCard, setPaymentCard] = useState(true);
   const [logoUri, setLogoUri] = useState<string | null>(null);
+  const [appLogo, setAppLogo] = useState<LogoName>("vente-cash");
+  const [logoPrimary, setLogoPrimary] = useState("#1D55C5");
+  const [logoSecondary, setLogoSecondary] = useState("#E8EFFC");
+  const [logoPickerOpen, setLogoPickerOpen] = useState(false);
   const [busy, setBusy] = useState<
     | "save"
     | "preferences"
@@ -203,6 +210,9 @@ export function SettingsScreen({
       getSetting(db, "payment_mobile_money"),
       getSetting(db, "payment_card"),
       getSetting(db, "shop_logo"),
+      getSetting(db, "app_logo"),
+      getSetting(db, "logo_primary"),
+      getSetting(db, "logo_secondary"),
     ]).then(([
       name,
       developerUntil,
@@ -222,6 +232,9 @@ export function SettingsScreen({
       mobile,
       card,
       savedLogo,
+      savedAppLogo,
+      savedLogoPrimary,
+      savedLogoSecondary,
     ]) => {
       setShopName(name ?? "Ma boutique");
       setDeveloperMode(Number(developerUntil) > Date.now());
@@ -243,6 +256,9 @@ export function SettingsScreen({
       setPaymentMobile(mobile !== "0");
       setPaymentCard(card !== "0");
       setLogoUri(savedLogo || null);
+      setAppLogo((savedAppLogo as LogoName) || "vente-cash");
+      setLogoPrimary(savedLogoPrimary || "#1D55C5");
+      setLogoSecondary(savedLogoSecondary || "#E8EFFC");
     });
   }, [db]);
 
@@ -726,12 +742,50 @@ export function SettingsScreen({
               ) : null}
             </View>
           </View>
-          <AppButton
+<AppButton
             icon="Save"
-            label="Enregistrer l’établissement"
+            label="Enregistrer l'établissement"
             loading={busy === "establishment"}
             onPress={() => void saveEstablishment()}
           />
+        </SettingCard>
+
+        <SettingCard
+          description="Logo et couleurs affichés dans l'application."
+          icon="Palette"
+          title="Logo de l'application"
+        >
+          <View style={styles.logoRow}>
+            <View style={styles.logoPreview}>
+              {logoRegistry[appLogo] ? (
+                (() => {
+                  const LogoComponent = logoRegistry[appLogo];
+                  return LogoComponent ? (
+                    <LogoComponent
+                      accessibilityLabel="Logo de l'application"
+                      color={logoPrimary}
+                      detail={logoSecondary}
+                      size={64}
+                    />
+                  ) : null;
+                })()
+              ) : (
+                <Icon color={colors.muted} name="Store" size={30} />
+              )}
+            </View>
+            <View style={styles.logoActions}>
+              <AppButton
+                icon="Palette"
+                label="Choisir le logo"
+                onPress={() => setLogoPickerOpen(true)}
+                tone="secondary"
+              />
+              <View style={styles.colorDots}>
+                <View style={[styles.colorDot, { backgroundColor: logoPrimary }]} />
+                <View style={[styles.colorDot, { backgroundColor: logoSecondary }]} />
+              </View>
+            </View>
+          </View>
         </SettingCard>
 
         <SettingCard
@@ -989,6 +1043,21 @@ export function SettingsScreen({
           MerchantHQ · Version 0.1.0
         </Text>
       </Pressable>
+
+      <LogoPicker
+        db={db}
+        initialLogo={appLogo}
+        initialPrimary={logoPrimary}
+        initialSecondary={logoSecondary}
+        onClose={() => setLogoPickerOpen(false)}
+        onSaved={(logo, primary, secondary) => {
+          setAppLogo(logo);
+          setLogoPrimary(primary);
+          setLogoSecondary(secondary);
+        }}
+        user={user}
+        visible={logoPickerOpen}
+      />
     </Page>
   );
 }
@@ -1082,6 +1151,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: space.xs,
+    alignItems: "center",
+  },
+  colorDots: {
+    flexDirection: "row",
+    gap: space.xs,
+  },
+  colorDot: {
+    borderRadius: radius.round,
+    height: 24,
+    width: 24,
+    borderWidth: 1,
+    borderColor: colors.rule,
   },
   toggleRow: {
     alignItems: "center",

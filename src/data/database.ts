@@ -470,6 +470,9 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
     ["ticket_footer", "Merci pour votre visite."],
     ["ticket_show_address", "1"],
     ["ticket_show_phone", "1"],
+    ["app_logo", "vente-cash"],
+    ["logo_primary", "#1D55C5"],
+    ["logo_secondary", "#E8EFFC"],
   ];
   for (const [key, value] of defaultSettings) {
     await db.runAsync(
