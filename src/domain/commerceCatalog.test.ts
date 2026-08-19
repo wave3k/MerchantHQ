@@ -5,7 +5,7 @@ import {
   COMMERCE_CATALOG,
 } from "./commerceCatalog";
 
-describe("catalogue Commerce Manager", () => {
+describe("catalogue MerchantHQ", () => {
   test("contient des noms uniques et des catégories renseignées", () => {
     const names = COMMERCE_CATALOG.map((item) => item.name.toLowerCase());
     expect(new Set(names).size).toBe(COMMERCE_CATALOG.length);

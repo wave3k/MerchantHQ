@@ -186,7 +186,7 @@ function assertBackup(value: unknown): asserts value is BackupFile {
     (value as BackupFile).format !== "commerce-manager-backup" ||
     ![1, 2, 3, 4, 5, 6, 7].includes((value as BackupFile).version)
   ) {
-    throw new Error("Ce fichier n’est pas une sauvegarde Commerce Manager valide.");
+    throw new Error("Ce fichier n’est pas une sauvegarde MerchantHQ valide.");
   }
   const version = (value as BackupFile).version;
   for (const table of TABLES) {

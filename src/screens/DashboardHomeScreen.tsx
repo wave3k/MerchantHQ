@@ -66,11 +66,34 @@ export function DashboardHomeScreen({
                 size={20}
               />
             </Pressable>
-          ) : (
-            <Text style={styles.actionDescription}>
-              Vous n'avez pas accès aux statistiques.
-            </Text>
-          )}
+          ) : null}
+          {userCanAccessScreen(user, "expenses") ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onNavigate("expenses")}
+              style={({ pressed }) => [
+                styles.quickAction,
+                pressed && styles.quickActionPressed,
+              ]}
+            >
+              <View style={styles.actionIcon}>
+                <Icon color={colors.accent} name="Coins" size={23} />
+              </View>
+              <View style={styles.actionCopy}>
+                <Text numberOfLines={1} style={styles.actionLabel}>
+                  Suivi des dépenses
+                </Text>
+                <Text numberOfLines={2} style={styles.actionDescription}>
+                  Sorties d’argent, catégories et total mensuel.
+                </Text>
+              </View>
+              <Icon
+                color={colors.muted}
+                name="ChevronRight"
+                size={20}
+              />
+            </Pressable>
+          ) : null}
         </View>
       </View>
     </Page>

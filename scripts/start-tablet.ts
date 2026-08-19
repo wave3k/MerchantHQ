@@ -21,7 +21,7 @@ function getLanAddress(): Promise<string> {
 
 const lanAddress = await getLanAddress();
 
-console.log(`Commerce Manager sera disponible sur exp://${lanAddress}:8081`);
+console.log(`MerchantHQ sera disponible sur exp://${lanAddress}:8081`);
 console.log("La tablette doit être connectée au même réseau Wi-Fi.");
 
 const expo = Bun.spawn(

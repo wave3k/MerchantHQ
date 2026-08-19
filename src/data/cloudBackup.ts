@@ -400,7 +400,7 @@ export async function restoreCloudBackup(
   }
   if (update.schemaVersion > BACKUP_FORMAT_VERSION) {
     throw new Error(
-      `Cette copie vient d’une version plus récente (${update.appVersion}). Mettez d’abord Commerce Manager à jour.`,
+      `Cette copie vient d’une version plus récente (${update.appVersion}). Mettez d’abord MerchantHQ à jour.`,
     );
   }
   const body = await runTursoPipeline(

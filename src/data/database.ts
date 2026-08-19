@@ -13,6 +13,9 @@ import type {
   DashboardStats,
   Employee,
   EmployeeInput,
+  Expense,
+  ExpenseCategory,
+  ExpenseInput,
   Order,
   Product,
   ProductInput,
@@ -28,7 +31,7 @@ import { createPasswordHash, verifyPassword } from "./security";
 import { withWriteTransaction } from "./transactions";
 
 const now = () => new Date().toISOString();
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 10;
 
 export interface OwnerAccountRecord {
   name: string;
@@ -102,6 +105,23 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS expense_categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  is_predefined INTEGER NOT NULL DEFAULT 0 CHECK(is_predefined IN (0, 1)),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS expenses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id INTEGER REFERENCES expense_categories(id) ON DELETE SET NULL,
+  amount INTEGER NOT NULL CHECK(amount > 0),
+  notes TEXT NOT NULL DEFAULT '',
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_by_name TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 
@@ -187,6 +207,8 @@ CREATE INDEX IF NOT EXISTS idx_attendance_work_date ON attendance_records(work_d
 CREATE INDEX IF NOT EXISTS idx_attendance_employee_id ON attendance_records(employee_id);
 CREATE INDEX IF NOT EXISTS idx_appointments_scheduled_at ON appointments(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_appointments_client_id ON appointments(client_id);
+CREATE INDEX IF NOT EXISTS idx_expenses_created_at ON expenses(created_at);
+CREATE INDEX IF NOT EXISTS idx_expenses_category_id ON expenses(category_id);
 `;
 
 async function tableColumns(
@@ -388,6 +410,40 @@ async function migrateToVersion9(db: SQLiteDatabase): Promise<void> {
   });
 }
 
+async function migrateToVersion10(db: SQLiteDatabase): Promise<void> {
+  const timestamp = now();
+  await withWriteTransaction(db, async (transaction) => {
+    await transaction.execAsync(`
+      CREATE TABLE IF NOT EXISTS expense_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        is_predefined INTEGER NOT NULL DEFAULT 0 CHECK(is_predefined IN (0, 1)),
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_id INTEGER REFERENCES expense_categories(id) ON DELETE SET NULL,
+        amount INTEGER NOT NULL CHECK(amount > 0),
+        notes TEXT NOT NULL DEFAULT '',
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_by_name TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_expenses_created_at ON expenses(created_at);
+      CREATE INDEX IF NOT EXISTS idx_expenses_category_id ON expenses(category_id);
+      INSERT OR IGNORE INTO expense_categories (name, is_predefined, created_at) VALUES
+        ('Loyer', 1, '${timestamp}'),
+        ('Marchandises', 1, '${timestamp}'),
+        ('Salaires', 1, '${timestamp}'),
+        ('Fournitures', 1, '${timestamp}'),
+        ('Transport', 1, '${timestamp}'),
+        ('Énergie', 1, '${timestamp}'),
+        ('Publicité', 1, '${timestamp}'),
+        ('Autre', 1, '${timestamp}');
+    `);
+  });
+}
+
 export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   await db.execAsync("PRAGMA journal_mode = WAL;");
   await db.execAsync("PRAGMA foreign_keys = ON;");
@@ -430,6 +486,8 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   const productColumns = await tableColumns(db, "products");
   const appointmentColumns = await tableColumns(db, "appointments");
   const categoriesColumns = await tableColumns(db, "categories");
+  const expenseCategoriesColumns = await tableColumns(db, "expense_categories");
+  const expenseColumns = await tableColumns(db, "expenses");
   const needsEmployeeMigration =
     !userColumns.has("employee_id") ||
     !orderColumns.has("employee_id") ||
@@ -458,6 +516,13 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   }
   if (categoriesColumns.size === 0 || (meta && meta.version < 9)) {
     await migrateToVersion9(db);
+  }
+  if (
+    expenseCategoriesColumns.size === 0 ||
+    expenseColumns.size === 0 ||
+    (meta && meta.version < 10)
+  ) {
+    await migrateToVersion10(db);
   }
 
   if (!meta) {
@@ -1190,6 +1255,95 @@ export async function createCategory(
     entityType: "category",
     description: `${actor.name} a créé la catégorie ${trimmed}.`,
     newValue: { name: trimmed },
+  });
+}
+
+export async function listExpenseCategories(
+  db: SQLiteDatabase,
+): Promise<ExpenseCategory[]> {
+  return db.getAllAsync<ExpenseCategory>(
+    `SELECT * FROM expense_categories
+     ORDER BY is_predefined DESC, name COLLATE NOCASE`,
+  );
+}
+
+export async function createExpenseCategory(
+  db: SQLiteDatabase,
+  name: string,
+  actor: User,
+): Promise<void> {
+  const trimmed = name.trim();
+  if (trimmed.length < 2) {
+    throw new Error(
+      "Le nom de la catégorie doit contenir au moins 2 caractères.",
+    );
+  }
+  const timestamp = now();
+  await db.runAsync(
+    "INSERT OR IGNORE INTO expense_categories (name, is_predefined, created_at) VALUES (?, 0, ?)",
+    trimmed,
+    timestamp,
+  );
+  await writeLog(db, actor, {
+    action: "create",
+    entityType: "expense_category",
+    description: `${actor.name} a créé la catégorie de dépense ${trimmed}.`,
+    newValue: { name: trimmed },
+  });
+}
+
+export async function listExpenses(db: SQLiteDatabase): Promise<Expense[]> {
+  return db.getAllAsync<Expense>(
+    `SELECT e.id, e.category_id, COALESCE(c.name, 'Autre') AS category_name,
+            e.amount, e.notes, e.created_by, e.created_by_name, e.created_at
+     FROM expenses e
+     LEFT JOIN expense_categories c ON c.id = e.category_id
+     ORDER BY e.created_at DESC, e.id DESC`,
+  );
+}
+
+export async function saveExpense(
+  db: SQLiteDatabase,
+  input: ExpenseInput,
+  actor: User,
+): Promise<void> {
+  const timestamp = now();
+  await db.runAsync(
+    `INSERT INTO expenses
+      (category_id, amount, notes, created_by, created_by_name, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    input.categoryId,
+    input.amount,
+    input.notes.trim(),
+    actor.id,
+    actor.name,
+    timestamp,
+  );
+  await writeLog(db, actor, {
+    action: "create",
+    entityType: "expense",
+    description: `${actor.name} a enregistré une dépense de ${input.amount}.`,
+    newValue: input,
+  });
+}
+
+export async function deleteExpense(
+  db: SQLiteDatabase,
+  expenseId: number,
+  actor: User,
+): Promise<void> {
+  const previous = await db.getFirstAsync<Expense>(
+    "SELECT * FROM expenses WHERE id = ?",
+    expenseId,
+  );
+  if (!previous) throw new Error("Dépense introuvable.");
+  await db.runAsync("DELETE FROM expenses WHERE id = ?", expenseId);
+  await writeLog(db, actor, {
+    action: "delete",
+    entityType: "expense",
+    entityId: expenseId,
+    description: `${actor.name} a retiré une dépense de ${previous.amount}.`,
+    oldValue: previous,
   });
 }
 

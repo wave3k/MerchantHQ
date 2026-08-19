@@ -56,7 +56,7 @@ export function Screensaver({
   return (
     <Pressable
       accessibilityHint="Ouvre l’écran de connexion"
-      accessibilityLabel="Réveiller Commerce Manager"
+      accessibilityLabel="Réveiller MerchantHQ"
       accessibilityRole="button"
       onPress={onWake}
       style={({ pressed }) => [
@@ -76,7 +76,7 @@ export function Screensaver({
         <Icon name="Fingerprint" size={20} color={colors.accent} />
         <Text style={styles.promptText}>{t("Touchez pour vous reconnecter")}</Text>
       </View>
-      <Text style={styles.brand}>Commerce Manager</Text>
+      <Text style={styles.brand}>MerchantHQ</Text>
     </Pressable>
   );
 }

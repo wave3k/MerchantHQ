@@ -1,5 +1,5 @@
 {
-  "name": "commerce-manager",
+  "name": "merchanthq",
   "version": "0.1.0",
   "private": true,
   "main": "index.ts",
@@ -49,6 +49,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
+    "sharp": "^0.35.3",
     "typescript": "~5.9.2"
   }
 }

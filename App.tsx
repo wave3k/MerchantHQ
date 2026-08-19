@@ -54,6 +54,7 @@ import type { AppModule, ScreenKey, User } from "./src/types";
 import { AuthScreen } from "./src/screens/AuthScreen";
 import { ClientsScreen } from "./src/screens/ClientsScreen";
 import { DashboardHomeScreen } from "./src/screens/DashboardHomeScreen";
+import { ExpensesScreen } from "./src/screens/ExpensesScreen";
 import { CaisseHomeScreen } from "./src/screens/CaisseHomeScreen";
 import { BoutiqueHomeScreen } from "./src/screens/BoutiqueHomeScreen";
 import { AppointmentsScreen } from "./src/screens/AppointmentsScreen";
@@ -97,6 +98,7 @@ const navigation: Record<
   dashboard: [
     { key: "home_dashboard", label: "Accueil", icon: "House" },
     { key: "statistics", label: "Statistiques", icon: "ChartColumn" },
+    { key: "expenses", label: "Dépenses", icon: "Coins" },
   ],
   caisse: [
     { key: "home_caisse", label: "Accueil", icon: "House" },
@@ -214,7 +216,7 @@ function Application() {
         : "Mise à jour de l’application requise",
       compatible
         ? `Une autre tablette a enregistré une copie le ${formatDateTime(update.snapshotAt)}.${versionLine}\n\nLa restaurer remplacera les données actuellement présentes sur cette tablette.`
-        : `La dernière copie vient de Commerce Manager ${update.appVersion}. Mettez cette tablette à jour avant de restaurer ses données.`,
+        : `La dernière copie vient de MerchantHQ ${update.appVersion}. Mettez cette tablette à jour avant de restaurer ses données.`,
       compatible
         ? [
             { text: "Plus tard", style: "cancel" },
@@ -414,6 +416,9 @@ function Application() {
       break;
     case "statistics":
       content = <StatisticsScreen db={db} onNavigate={navigateTo} />;
+      break;
+    case "expenses":
+      content = <ExpensesScreen db={db} user={user} />;
       break;
     case "products":
       content = <ProductsScreen db={db} user={user} />;

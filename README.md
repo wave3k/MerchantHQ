@@ -1,4 +1,4 @@
-# Commerce Manager
+# MerchantHQ
 
 MVP React Native hors ligne pour gérer une boutique sur une tablette Android.
 Les comptes, produits, clients, commandes, stocks et logs sont stockés dans une

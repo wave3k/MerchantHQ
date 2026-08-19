@@ -239,12 +239,7 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.root}
     >
-      <ScrollView
-        automaticallyAdjustKeyboardInsets
-        contentContainerStyle={[styles.scroll, stacked && styles.scrollStacked]}
-        keyboardDismissMode="on-drag"
-        keyboardShouldPersistTaps="handled"
-      >
+      <View style={[styles.split, stacked && styles.splitStacked]}>
         <View style={[styles.brandPane, stacked && styles.brandPaneStacked]}>
           <View style={styles.brandCopy}>
             <CashRegisterIcon
@@ -252,7 +247,7 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
               detail={colors.inkSurfaceText}
               size={84}
             />
-            <Text style={styles.brand}>Commerce Manager</Text>
+            <Text style={styles.brand}>MerchantHQ</Text>
             <Text style={styles.promise}>
               {t("La caisse, les produits et les clients au même endroit.")}
             </Text>
@@ -263,7 +258,15 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
           </View>
         </View>
 
-        <View style={[styles.rightPane, stacked && styles.rightPaneStacked]}>
+        <ScrollView
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={[
+            styles.rightContent,
+          ]}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          style={[styles.rightScroll, stacked && styles.rightScrollStacked]}
+        >
           <View style={[styles.card, stacked && styles.cardStacked]}>
             {developerOpen ? (
             <>
@@ -467,8 +470,8 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
             </Pressable>
           ) : null}
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -478,33 +481,36 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
     flex: 1,
   },
-  scroll: {
-    alignItems: "stretch",
+  split: {
+    flex: 1,
     flexDirection: "row",
-    flexGrow: 1,
-    minHeight: 620,
   },
-  scrollStacked: {
+  splitStacked: {
     flexDirection: "column",
-    justifyContent: "flex-start",
   },
   brandPane: {
+    alignSelf: "stretch",
     backgroundColor: colors.ink,
     flex: 1,
     padding: space.xxl,
   },
-  rightPane: {
-    flex: 1.2,
-    justifyContent: "center",
-  },
-  rightPaneStacked: {
-    flex: 0,
-  },
   brandPaneStacked: {
+    alignSelf: "auto",
     flex: 0,
     gap: space.xl,
     minHeight: 250,
     padding: space.lg,
+  },
+  rightScroll: {
+    alignSelf: "stretch",
+    flex: 1.2,
+  },
+  rightScrollStacked: {
+    alignSelf: "auto",
+    flex: 1,
+  },
+  rightContent: {
+    flexGrow: 1,
   },
   brandCopy: {
     alignItems: "center",
@@ -551,6 +557,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: space.sm,
     margin: space.xxl,
+    marginVertical: "auto",
     maxWidth: 580,
     padding: space.xl,
     width: "100%",

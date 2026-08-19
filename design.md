@@ -1,4 +1,4 @@
-# Commerce Manager — système visuel local
+# MerchantHQ — système visuel local
 
 ## Intention
 

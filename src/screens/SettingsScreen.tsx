@@ -482,7 +482,7 @@ export function SettingsScreen({
       if (!granted) {
         Alert.alert(
           "Notifications désactivées",
-          "Autorisez les notifications dans les réglages Android de Commerce Manager, puis réessayez.",
+          "Autorisez les notifications dans les réglages Android de MerchantHQ, puis réessayez.",
         );
         return;
       }
@@ -543,7 +543,7 @@ export function SettingsScreen({
       } else if (result.outcome === "remote_newer") {
         Alert.alert(
           "Copie plus récente disponible",
-          "Une autre tablette possède une copie plus récente. Relancez Commerce Manager pour l’examiner et la restaurer sans l’écraser.",
+          "Une autre tablette possède une copie plus récente. Relancez MerchantHQ pour l’examiner et la restaurer sans l’écraser.",
         );
       } else {
         Alert.alert(
@@ -986,7 +986,7 @@ export function SettingsScreen({
         ]}
       >
         <Text style={styles.versionText}>
-          Commerce Manager · Version 0.1.0
+          MerchantHQ · Version 0.1.0
         </Text>
       </Pressable>
     </Page>

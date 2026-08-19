@@ -4,6 +4,7 @@ export type AppModule = "dashboard" | "caisse" | "boutique";
 export type ScreenKey =
   | "home_dashboard"
   | "statistics"
+  | "expenses"
   | "home_caisse"
   | "orders"
   | "clients"
@@ -211,6 +212,31 @@ export interface ProductInput {
   stock: number;
   lowStockThreshold: number;
   tracksStock: boolean;
+}
+
+export interface ExpenseCategory {
+  id: number;
+  name: string;
+  is_predefined: number;
+  created_at: string;
+}
+
+export interface Expense {
+  id: number;
+  category_id: number | null;
+  category_name: string;
+  amount: number;
+  notes: string;
+  created_by: number | null;
+  created_by_name: string;
+  created_at: string;
+}
+
+export interface ExpenseInput {
+  categoryId: number | null;
+  categoryName: string;
+  amount: number;
+  notes: string;
 }
 
 export interface ClientInput {

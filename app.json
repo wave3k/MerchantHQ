@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Commerce Manager",
+    "name": "MerchantHQ",
     "slug": "commerce-manager",
     "version": "0.1.0",
     "orientation": "landscape",
@@ -39,7 +39,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Autoriser Commerce Manager à accéder aux photos pour choisir le logo de l’établissement."
+          "photosPermission": "Autoriser MerchantHQ à accéder aux photos pour choisir le logo de l’établissement."
         }
       ],
       "expo-notifications",

@@ -6,7 +6,7 @@ export function CashRegisterIcon({
   size = 80,
   color = colors.accent,
   detail = colors.accentSoft,
-  accessibilityLabel = "Logo Commerce Manager",
+  accessibilityLabel = "Logo MerchantHQ",
 }: {
   size?: number;
   color?: string;

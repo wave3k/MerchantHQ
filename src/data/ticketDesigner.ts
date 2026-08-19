@@ -159,7 +159,7 @@ function renderBlock(
       if (logoDataUri) {
         return `<div class="${className}"><img class="logo-image" src="${escapeHtml(
           logoDataUri,
-        )}" alt="Commerce Manager" /></div>`;
+        )}" alt="MerchantHQ" /></div>`;
       }
       return `<div class="${className}"><div class="logo">${escapeHtml(
         initials(establishment.shopName) || "CM",

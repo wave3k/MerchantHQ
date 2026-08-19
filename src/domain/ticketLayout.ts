@@ -69,7 +69,7 @@ export const ticketBlockDefinitions: TicketBlockDefinition[] = [
   {
     type: "logo",
     title: "Logo",
-    description: "Logo officiel de Commerce Manager.",
+    description: "Logo officiel de MerchantHQ.",
     icon: "Image",
   },
   {

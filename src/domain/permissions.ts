@@ -14,6 +14,7 @@ export type Permission =
   | "appointments.manage"
   | "attendance.manage"
   | "statistics.view"
+  | "expenses.manage"
   | "team.manage"
   | "logs.view"
   | "tickets.manage"
@@ -34,6 +35,7 @@ const rolePermissions: Record<Role, ReadonlySet<Permission>> = {
     "appointments.manage",
     "attendance.manage",
     "statistics.view",
+    "expenses.manage",
     "team.manage",
     "logs.view",
     "tickets.manage",
@@ -53,6 +55,7 @@ const rolePermissions: Record<Role, ReadonlySet<Permission>> = {
     "appointments.manage",
     "attendance.manage",
     "statistics.view",
+    "expenses.manage",
     "logs.view",
   ]),
   cashier: new Set<Permission>([
@@ -123,6 +126,7 @@ export function canAccessScreen(
     home_caisse: "orders.view",
     home_boutique: "products.view",
     statistics: "statistics.view",
+    expenses: "expenses.manage",
     orders: "orders.view",
     products: "products.view",
     clients: "clients.view",
@@ -225,6 +229,7 @@ export const permissionGroups: PermissionGroup[] = [
     title: "Direction",
     permissions: [
       { key: "statistics.view", label: "Voir les statistiques" },
+      { key: "expenses.manage", label: "Gérer les dépenses" },
       { key: "tickets.manage", label: "Modifier le modèle des tickets" },
       { key: "backup.manage", label: "Gérer les sauvegardes et réglages" },
     ],
