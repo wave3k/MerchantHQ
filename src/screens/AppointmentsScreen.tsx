@@ -15,6 +15,7 @@ import {
 import { AppButton } from "../components/AppButton";
 import { ModalSheet } from "../components/ModalSheet";
 import { Badge, EmptyState, Page } from "../components/Page";
+import { DatePickerField, TimePickerField } from "../components/PickerFields";
 import { TextField } from "../components/TextField";
 import {
   listAppointments,
@@ -37,7 +38,7 @@ import {
   parseAppointmentDate,
 } from "../domain/appointments";
 import { formatDateTime, locale, normalizePhone } from "../domain/format";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type {
   Appointment,
@@ -59,6 +60,7 @@ const emptyClient: ClientInput = { name: "", phone: "", address: "" };
 const reminderOptions = [0, 15, 30, 60, 120, 1440] as const;
 
 export function AppointmentsScreen({ db, user }: AppointmentsScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -561,19 +563,17 @@ export function AppointmentsScreen({ db, user }: AppointmentsScreenProps) {
 
         <View style={[styles.dateFields, !split && styles.dateFieldsStacked]}>
           <View style={styles.field}>
-            <TextField
-              keyboardType="numbers-and-punctuation"
+            <DatePickerField
               label="Date"
-              onChangeText={setDateText}
+              onChange={(date) => setDateText(formatAppointmentDate(date))}
               placeholder="31/12/2026"
               value={dateText}
             />
           </View>
           <View style={styles.field}>
-            <TextField
-              keyboardType="numbers-and-punctuation"
+            <TimePickerField
               label="Heure"
-              onChangeText={setTimeText}
+              onChange={(time) => setTimeText(formatAppointmentTime(time))}
               placeholder="14:30"
               value={timeText}
             />
@@ -668,7 +668,8 @@ export function AppointmentsScreen({ db, user }: AppointmentsScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   overview: {
     alignItems: "stretch",
     flexDirection: "row",
@@ -918,3 +919,4 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 });
+}

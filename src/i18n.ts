@@ -11,7 +11,16 @@ function readLanguage(): Language {
   }
 }
 
-export const activeLanguage = readLanguage();
+export let activeLanguage: Language = readLanguage();
+
+export function setActiveLanguage(language: Language): void {
+  activeLanguage = language;
+  try {
+    SecureStore.setItem("commerce.language", language);
+  } catch {
+    // Le stockage local reste optionnel.
+  }
+}
 
 const english: Record<string, string> = {
   "1 heure avant": "1 hour before",

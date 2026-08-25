@@ -41,7 +41,7 @@ import {
   type TicketEstablishment,
 } from "../data/ticketDesigner";
 import { printSampleTicket } from "../data/tickets";
-import { colors, fonts, radius, shadow, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, shadow, space } from "../theme";
 import type { User } from "../types";
 
 const DRAG_ROW_HEIGHT = 68;
@@ -55,6 +55,7 @@ function ChoiceRow<T extends string | number>({
   options: Array<{ value: T; label: string }>;
   onChange: (value: T) => void;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.choiceRow}>
       {options.map((option) => {
@@ -95,6 +96,7 @@ function ToggleRow({
   value: boolean;
   onChange: (value: boolean) => void;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <Pressable
       accessibilityRole="switch"
@@ -159,6 +161,7 @@ function TicketBlockPreview({
   itemDetails: boolean;
   logoDataUri: string | null;
 }) {
+  const styles = useThemedStyles(createStyles);
   const baseText = {
     color: colors.ticketInk,
     fontFamily: block.bold ? fonts.bodySemibold : fonts.body,
@@ -286,6 +289,7 @@ function DraggableTicketRow({
   onMove: (from: number, to: number) => void;
   onDragTarget: (index: number | null) => void;
 }) {
+  const styles = useThemedStyles(createStyles);
   const translateY = useRef(new Animated.Value(0)).current;
   const targetRef = useRef(index);
   const [dragging, setDragging] = useState(false);
@@ -409,6 +413,7 @@ function PanelTitle({
   title: string;
   description: string;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.panelTitleRow}>
       <Icon name={icon} size={20} color={colors.accent} />
@@ -427,6 +432,7 @@ export function TicketDesignerScreen({
   db: SQLiteDatabase;
   user: User;
 }) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const [designer, setDesigner] = useState<TicketDesignerData | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1029,7 +1035,8 @@ export function TicketDesignerScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   loading: {
     alignItems: "center",
     flex: 1,
@@ -1469,3 +1476,4 @@ const styles = StyleSheet.create({
     padding: space.md,
   },
 });
+}

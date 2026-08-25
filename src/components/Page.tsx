@@ -13,7 +13,7 @@ import Icon from "./Icon";
 import type { IconName } from "./Icon";
 import type { ReactNode } from "react";
 
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { t } from "../i18n";
 
 interface PageProps {
@@ -33,6 +33,7 @@ export function Page({
   scroll = true,
   contentStyle,
 }: PageProps) {
+  const styles = useThemedStyles(createStyles);
   const content = (
     <View style={[styles.content, contentStyle]}>
       <View style={styles.header}>
@@ -79,6 +80,7 @@ export function SearchField({
   onChangeText,
   placeholder = "Rechercher",
 }: SearchFieldProps) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.search}>
       <Icon name="Search" size={19} color={colors.muted} />
@@ -113,6 +115,7 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({ icon, title, message, action }: EmptyStateProps) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.empty}>
       <View style={styles.emptyIcon}>
@@ -139,6 +142,7 @@ const badgeTones = {
 };
 
 export function Badge({ label, tone = "neutral" }: BadgeProps) {
+  const styles = useThemedStyles(createStyles);
   const palette = badgeTones[tone];
   return (
     <View style={[styles.badge, { backgroundColor: palette.background }]}>
@@ -149,7 +153,8 @@ export function Badge({ label, tone = "neutral" }: BadgeProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   keyboard: {
     flex: 1,
     minHeight: 0,
@@ -256,3 +261,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 });
+}

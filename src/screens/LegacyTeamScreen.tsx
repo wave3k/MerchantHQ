@@ -20,7 +20,7 @@ import {
 } from "../data/database";
 import { formatDate } from "../domain/format";
 import { roleLabel } from "../domain/permissions";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type { Role, User, UserInput } from "../types";
 
@@ -40,6 +40,7 @@ const emptyDraft: LegacyUserInput = {
 };
 
 export function LegacyTeamScreen({ db, user }: TeamScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const [users, setUsers] = useState<User[]>([]);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<User | null>(null);
@@ -313,7 +314,8 @@ export function LegacyTeamScreen({ db, user }: TeamScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -430,3 +432,4 @@ const styles = StyleSheet.create({
     marginTop: space.xxs,
   },
 });
+}

@@ -4,7 +4,6 @@ import {
   dueBusinessDate,
   manualBusinessDate,
   shouldOfferRemoteRestore,
-  tursoPipelineUrl,
 } from "./cloudBackup";
 
 describe("sauvegarde cloud quotidienne", () => {
@@ -43,13 +42,7 @@ describe("sauvegarde cloud quotidienne", () => {
     );
   });
 
-  test("convertit une URL libsql en endpoint HTTP", () => {
-    expect(
-      tursoPipelineUrl("libsql://example.turso.io"),
-    ).toBe("https://example.turso.io/v2/pipeline");
-  });
-
-  test("propose la copie plus récente d’une autre tablette", () => {
+  test("propose la copie plus récente d’un autre appareil", () => {
     expect(
       shouldOfferRemoteRestore({
         remoteBackupId: "tablet-b:2026-07-29",

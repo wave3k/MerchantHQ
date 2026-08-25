@@ -7,7 +7,7 @@
     "start": "expo start",
     "tablet": "bun scripts/start-tablet.ts",
     "android": "expo start --android",
-    "web": "expo start --web",
+    "web": "expo start --web --offline",
     "export:android": "expo export --platform android --output-dir dist-final",
     "export:web": "expo export --platform web --output-dir dist-web",
     "typecheck": "tsc --noEmit",

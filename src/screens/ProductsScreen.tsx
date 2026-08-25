@@ -28,7 +28,7 @@ import { notifyLowStockChanges } from "../data/notifications";
 import { formatMoney } from "../domain/format";
 import { userCan } from "../domain/permissions";
 import { isLowStock, tracksStock as productTracksStock } from "../domain/stock";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type { Product, ProductInput, User } from "../types";
 
@@ -48,6 +48,7 @@ const emptyDraft: ProductInput = {
 };
 
 export function ProductsScreen({ db, user }: ProductsScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
@@ -690,7 +691,8 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   catalogSummary: {
     alignItems: "center",
     flexDirection: "row",
@@ -999,3 +1001,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+}

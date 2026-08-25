@@ -9,7 +9,7 @@ import { Page } from "../components/Page";
 import { LiveClock } from "../components/LiveClock";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import { userCanAccessScreen } from "../domain/permissions";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import type { ScreenKey, User } from "../types";
 
 interface DashboardHomeScreenProps {
@@ -22,6 +22,7 @@ export function DashboardHomeScreen({
   user,
   onNavigate,
 }: DashboardHomeScreenProps) {
+  const styles = useThemedStyles(createStyles);
   return (
     <Page
       action={<LiveClock />}
@@ -100,7 +101,8 @@ export function DashboardHomeScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   actionsBand: {
     borderBottomColor: colors.rule,
     borderBottomWidth: 1,
@@ -167,3 +169,4 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 });
+}

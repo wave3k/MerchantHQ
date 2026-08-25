@@ -25,10 +25,8 @@ import {
   resetBossPassword,
   verifyBossPassword,
 } from "../data/database";
-import { ensureBundledCloudBackupConfig } from "../data/cloudBackup";
-import { pushOwnerAccount, syncOwnerAccount } from "../data/accountSync";
 import { roleLabel } from "../domain/permissions";
-import { colors, fonts, radius, shadow, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, shadow, space } from "../theme";
 import type { User } from "../types";
 import { t } from "../i18n";
 import { CashRegisterIcon } from "../components/CashRegisterIcon";
@@ -40,6 +38,7 @@ interface AuthScreenProps {
 }
 
 export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const stacked = width < 860;
   const [loading, setLoading] = useState(true);
@@ -62,20 +61,7 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
 
   useEffect(() => {
     void (async () => {
-      await ensureBundledCloudBackupConfig();
       let exists = await hasUsers(db);
-      if (exists) {
-        void syncOwnerAccount(db, { attempts: 1, timeoutMs: 3_000 }).catch(
-          () => undefined,
-        );
-      } else {
-        try {
-          await syncOwnerAccount(db, { attempts: 1, timeoutMs: 3_000 });
-          exists = await hasUsers(db);
-        } catch {
-          // Une première installation hors ligne pourra créer le compte propriétaire.
-        }
-      }
       setSetup(!exists);
       if (exists) {
         const available = await listUsers(db);
@@ -152,9 +138,6 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
     setError("");
     try {
       const boss = await createBoss(db, name, username, password);
-      void pushOwnerAccount(db).catch(() => {
-        // Le compte sera envoyé dès que Turso redeviendra joignable.
-      });
       await SecureStore.setItemAsync("last_user_id", String(boss.id));
       onAuthenticated(boss);
     } catch (caught) {
@@ -187,17 +170,9 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
     setDeveloperError("");
     try {
       await resetBossPassword(db, nextPassword);
-      let synced = true;
-      try {
-        await pushOwnerAccount(db);
-      } catch {
-        synced = false;
-      }
       Alert.alert(
         "Mot de passe réinitialisé",
-        synced
-          ? "Le compte propriétaire a aussi été mis à jour dans Turso."
-          : "Le mot de passe est enregistré sur la tablette. Turso sera mis à jour dès le retour d’Internet.",
+        "Le mot de passe du compte propriétaire est enregistré sur la tablette.",
       );
       setDeveloperOpen(false);
       setDeveloperUnlocked(false);
@@ -476,7 +451,8 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   root: {
     backgroundColor: colors.paper,
     flex: 1,
@@ -713,3 +689,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+}

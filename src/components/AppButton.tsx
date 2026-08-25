@@ -2,7 +2,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import Icon from "./Icon";
 import type { IconName } from "./Icon";
 
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { t } from "../i18n";
 
 type Tone = "primary" | "secondary" | "danger" | "ghost";
@@ -57,6 +57,7 @@ export function AppButton({
   fullWidth = false,
   accessibilityHint,
 }: AppButtonProps) {
+  const styles = useThemedStyles(createStyles);
   const palette = tones[tone];
   const translatedLabel = t(label);
   return (
@@ -93,7 +94,8 @@ export function AppButton({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   base: {
     alignItems: "center",
     borderRadius: radius.sm,
@@ -122,3 +124,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 });
+}

@@ -12,7 +12,7 @@ import { Badge, EmptyState, Page, SearchField } from "../components/Page";
 import { listLogs } from "../data/database";
 import { formatDateTime } from "../domain/format";
 import { roleLabel } from "../domain/permissions";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type { ActivityLog } from "../types";
 
@@ -42,6 +42,7 @@ function prettyJson(value: string | null): string {
 }
 
 export function LogsScreen({ db }: LogsScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<ActivityLog | null>(null);
@@ -193,7 +194,8 @@ export function LogsScreen({ db }: LogsScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   notice: {
     alignItems: "center",
     backgroundColor: colors.accentSoft,
@@ -321,3 +323,4 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
 });
+}

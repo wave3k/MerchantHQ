@@ -8,6 +8,7 @@ import { Alert, Pressable, StyleSheet, View, useWindowDimensions } from "react-n
 import { AppButton } from "../components/AppButton";
 import { ModalSheet } from "../components/ModalSheet";
 import { Badge, EmptyState, Page } from "../components/Page";
+import { TimePickerField } from "../components/PickerFields";
 import { TextField } from "../components/TextField";
 import { listAttendanceForDate, saveAttendance } from "../data/database";
 import {
@@ -19,7 +20,7 @@ import {
 } from "../domain/attendance";
 import { activeLanguage, t } from "../i18n";
 import { locale } from "../domain/format";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type { AttendanceRecord, AttendanceStatus, User } from "../types";
 
@@ -47,6 +48,7 @@ function statusTone(status: AttendanceStatus | null) {
 }
 
 export function AttendanceScreen({ db, user }: AttendanceScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const [workDate, setWorkDate] = useState(todayKey);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -301,13 +303,12 @@ export function AttendanceScreen({ db, user }: AttendanceScreenProps) {
           ))}
         </View>
         {status === "present" ? (
-          <TextField
+          <TimePickerField
             error={error || undefined}
             helper="Format 24 heures, par exemple 08:30."
-            keyboardType="numbers-and-punctuation"
             label="Heure d’arrivée"
-            onChangeText={(value) => {
-              setArrivalTime(value);
+            onChange={(time) => {
+              setArrivalTime(formatArrivalTime(time.toISOString()));
               if (error) setError("");
             }}
             placeholder="08:00"
@@ -342,7 +343,8 @@ export function AttendanceScreen({ db, user }: AttendanceScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   dateBar: {
     alignItems: "center",
     backgroundColor: colors.surfaceStrong,
@@ -434,3 +436,4 @@ const styles = StyleSheet.create({
   noteInput: { minHeight: 88, textAlignVertical: "top" },
   modalActions: { flexDirection: "row", gap: space.sm, justifyContent: "flex-end" },
 });
+}

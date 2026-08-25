@@ -15,7 +15,7 @@ import {
 import { Badge, EmptyState, Page } from "../components/Page";
 import { getStatistics } from "../data/database";
 import { formatDateTime, formatMoney, locale } from "../domain/format";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type {
   ScreenKey,
@@ -38,6 +38,7 @@ export function StatisticsScreen({
   db,
   onNavigate,
 }: StatisticsScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const [period, setPeriod] = useState<StatisticsPeriod>("month");
   const [statistics, setStatistics] = useState<StatisticsData | null>(null);
@@ -69,6 +70,15 @@ export function StatisticsScreen({
       Math.max(
         1,
         ...(statistics?.revenueByDay.map((item) => item.revenue) ?? []),
+      ),
+    [statistics],
+  );
+
+  const maxExpenses = useMemo(
+    () =>
+      Math.max(
+        1,
+        ...(statistics?.expensesByDay.map((item) => item.total) ?? []),
       ),
     [statistics],
   );
@@ -149,6 +159,10 @@ export function StatisticsScreen({
                 label="Nouveaux clients"
                 value={String(statistics.newClients)}
               />
+              <Metric
+                label="Dépenses"
+                value={formatMoney(statistics.expenses)}
+              />
             </View>
           </View>
 
@@ -219,6 +233,46 @@ export function StatisticsScreen({
             </>
           )}
 
+          {statistics.expensesByDay.length ? (
+            <View style={styles.chart}>
+              <View style={styles.chartHeader}>
+                <Text style={styles.panelTitle}>Dépenses par jour</Text>
+                <Text style={styles.chartHint}>
+                  {statistics.expensesByDay.length} jour(s) avec dépenses
+                </Text>
+              </View>
+              <View style={styles.bars}>
+                {statistics.expensesByDay.map((item) => (
+                  <View key={item.day} style={styles.barRow}>
+                    <Text style={styles.barDate}>
+                      {new Intl.DateTimeFormat(locale(), {
+                        day: "2-digit",
+                        month: "short",
+                      }).format(new Date(`${item.day}T12:00:00`))}
+                    </Text>
+                    <View style={styles.barTrack}>
+                      <View
+                        style={[
+                          styles.barFill,
+                          styles.barFillExpense,
+                          {
+                            width: `${Math.max(
+                              4,
+                              (item.total / maxExpenses) * 100,
+                            )}%`,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.barValue}>
+                      {formatMoney(item.total)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
           {statistics.recentOrders.length ? (
             <View style={styles.ordersPanel}>
               <View style={styles.ordersHeader}>
@@ -276,6 +330,7 @@ export function StatisticsScreen({
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.metric}>
       <Text adjustsFontSizeToFit numberOfLines={1} style={styles.metricValue}>
@@ -295,6 +350,7 @@ function RankingPanel({
   title: string;
   rows: Array<{ label: string; meta: string; value: string }>;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.panel}>
       <Text style={[styles.panelTitle, styles.panelHeading]}>{title}</Text>
@@ -318,7 +374,8 @@ function RankingPanel({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   headerActions: {
     alignItems: "center",
     flexDirection: "row",
@@ -531,6 +588,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     height: "100%",
   },
+  barFillExpense: {
+    backgroundColor: colors.error,
+  },
   barValue: {
     color: colors.ink2,
     fontFamily: fonts.mono,
@@ -606,3 +666,4 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
 });
+}

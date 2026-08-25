@@ -172,6 +172,9 @@ export interface DashboardStats {
   newClientsMonth: number;
   activeEmployees: number;
   lowStockCount: number;
+  expensesToday: number;
+  expensesWeek: number;
+  expensesMonth: number;
   topProducts: Array<{ name: string; quantity: number; revenue: number }>;
   recentOrders: Order[];
 }
@@ -184,6 +187,7 @@ export interface StatisticsData {
   itemsSold: number;
   averageBasket: number;
   newClients: number;
+  expenses: number;
   topProducts: Array<{
     id: number | null;
     name: string;
@@ -200,6 +204,11 @@ export interface StatisticsData {
     day: string;
     revenue: number;
     orderCount: number;
+  }>;
+  expensesByDay: Array<{
+    day: string;
+    total: number;
+    count: number;
   }>;
   recentOrders: Order[];
 }

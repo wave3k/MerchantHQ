@@ -14,5 +14,6 @@
   "include": [
     "**/*.ts",
     "**/*.tsx"
-  ]
+  ],
+  "exclude": ["node_modules", "dist-web", "dist-final"]
 }

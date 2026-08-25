@@ -20,7 +20,7 @@ import {
   permissionsForRole,
   roleLabel,
 } from "../domain/permissions";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type {
   Employee,
@@ -50,6 +50,7 @@ export function AccountPermissionsScreen({
   initialEmployeeId,
   onDone,
 }: AccountPermissionsScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -436,7 +437,8 @@ export function AccountPermissionsScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   section: {
     borderBottomColor: colors.rule,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -625,3 +627,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
+}

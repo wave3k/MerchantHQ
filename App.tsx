@@ -33,25 +33,31 @@ import {
   subscribeToNotificationNavigation,
 } from "./src/data/notifications";
 import {
-  ensureBundledCloudBackupConfig,
-  getCloudBackupUpdate,
-  restoreCloudBackup,
-  syncCloudBackup,
-  type CloudBackupUpdate,
-} from "./src/data/cloudBackup";
-import { registerCloudBackupTask } from "./src/data/backgroundSync";
-import { syncOwnerAccount } from "./src/data/accountSync";
-import { roleLabel, userCanAccessScreen } from "./src/domain/permissions";
-import {
   configureFormatting,
-  formatDateTime,
   type AppLanguage,
   type CurrencyCode,
 } from "./src/domain/format";
-import { APP_VERSION, BACKUP_FORMAT_VERSION } from "./src/appInfo";
-import { activeTheme, colors, fonts, radius, space } from "./src/theme";
+import {
+  getLocalDataAt,
+  getRemoteBackupMetadata,
+  hasLocalBusinessData,
+  isAppSetupComplete,
+  restoreCloudBackup,
+  resetLocalData,
+  setAppSetupComplete,
+  syncCloudBackup,
+  CLOUD_ACCOUNT_ID_KEY,
+} from "./src/data/cloudApi";
+import { clearSession, getSession, type CloudSession } from "./src/data/cloudSession";
+import { registerCloudBackupTask } from "./src/data/backgroundSync";
+import type { SyncSituation } from "./src/domain/syncDecision";
+import { roleLabel, userCanAccessScreen } from "./src/domain/permissions";
+import { useThemedStyles, applyTheme, activeTheme, colors, fonts, radius, space, type AppTheme } from "./src/theme";
 import type { AppModule, ScreenKey, User } from "./src/types";
 import { AuthScreen } from "./src/screens/AuthScreen";
+import { CloudAccountScreen } from "./src/screens/CloudAccountScreen";
+import { SetupScreen } from "./src/screens/SetupScreen";
+import { SyncDecisionScreen } from "./src/screens/SyncDecisionScreen";
 import { ClientsScreen } from "./src/screens/ClientsScreen";
 import { DashboardHomeScreen } from "./src/screens/DashboardHomeScreen";
 import { ExpensesScreen } from "./src/screens/ExpensesScreen";
@@ -74,7 +80,7 @@ import { logoRegistry } from "./src/components/logos";
 import type { LogoName } from "./src/components/logos";
 import { ModalSheet } from "./src/components/ModalSheet";
 import { TextField } from "./src/components/TextField";
-import { t } from "./src/i18n";
+import { setActiveLanguage, t, type Language } from "./src/i18n";
 import { TranslatedText as Text } from "./src/components/TranslatedText";
 
 const AUTO_LOCK_MS = 5 * 60 * 1000;
@@ -100,7 +106,7 @@ const navigation: Record<
   dashboard: [
     { key: "home_dashboard", label: "Accueil", icon: "House" },
     { key: "statistics", label: "Statistiques", icon: "ChartColumn" },
-    { key: "expenses", label: "D�penses", icon: "Coins" },
+    { key: "expenses", label: "Dépenses", icon: "Coins" },
   ],
   caisse: [
     { key: "home_caisse", label: "Accueil", icon: "House" },
@@ -112,10 +118,10 @@ const navigation: Record<
   boutique: [
     { key: "home_boutique", label: "Accueil", icon: "House" },
     { key: "products", label: "Produits", icon: "Package" },
-    { key: "attendance", label: "Pr�sences", icon: "ClipboardCheck" },
-    { key: "team", label: "Employ�s", icon: "UserCog" },
-    { key: "logs", label: "Activit�", icon: "Activity" },
-    { key: "settings", label: "R�glages", icon: "Settings" },
+    { key: "attendance", label: "Présences", icon: "ClipboardCheck" },
+    { key: "team", label: "Employés", icon: "UserCog" },
+    { key: "logs", label: "Activité", icon: "Activity" },
+    { key: "settings", label: "Réglages", icon: "Settings" },
   ],
 };
 
@@ -126,6 +132,7 @@ function LoadingScreen({
   label: string;
   logo?: React.ReactNode;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.loading}>
       {logo ?? <CashRegisterIcon size={64} />}
@@ -136,9 +143,15 @@ function LoadingScreen({
 }
 
 function Application() {
+  const styles = useThemedStyles(createStyles);
   const db = useSQLiteContext();
   const { width } = useWindowDimensions();
   const [user, setUser] = useState<User | null>(null);
+  const [sessionReady, setSessionReady] = useState<boolean | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [syncSituation, setSyncSituation] = useState<SyncSituation | null>(null);
+  const [setupPending, setSetupPending] = useState(false);
+  const [existingAccount, setExistingAccount] = useState(false);
   const [activeModule, setActiveModule] = useState<AppModule>("caisse");
   const [screen, setScreen] = useState<ScreenKey>("home_caisse");
   const [screenParams, setScreenParams] = useState<{
@@ -147,7 +160,6 @@ function Application() {
   }>({});
   const [saleFullscreen, setSaleFullscreen] = useState(false);
   const [screensaver, setScreensaver] = useState(false);
-  const [restoringBackup, setRestoringBackup] = useState(false);
   const [dashboardAccessOpen, setDashboardAccessOpen] = useState(false);
   const [dashboardCode, setDashboardCode] = useState("");
   const [dashboardCodeError, setDashboardCodeError] = useState("");
@@ -176,12 +188,13 @@ function Application() {
   })();
 
   async function refreshPreferences() {
-    const [name, primary, secondary, rate, language, savedLogo, savedPrimary, savedSecondary] = await Promise.all([
+    const [name, primary, secondary, rate, language, savedTheme, savedLogo, savedPrimary, savedSecondary] = await Promise.all([
       getSetting(db, "shop_name"),
       getSetting(db, "currency_primary"),
       getSetting(db, "currency_secondary"),
       getSetting(db, "currency_rate"),
       getSetting(db, "language"),
+      getSetting(db, "theme"),
       getSetting(db, "app_logo"),
       getSetting(db, "logo_primary"),
       getSetting(db, "logo_secondary"),
@@ -190,6 +203,8 @@ function Application() {
     if (savedLogo) setAppLogo(savedLogo as LogoName);
     if (savedPrimary) setLogoPrimary(savedPrimary);
     if (savedSecondary) setLogoSecondary(savedSecondary);
+    applyTheme((savedTheme as AppTheme) ?? "cobalt");
+    setActiveLanguage((language as Language) ?? "fr");
     configureFormatting({
       primary: (primary as CurrencyCode) ?? "CDF",
       secondary:
@@ -206,85 +221,186 @@ function Application() {
     void refreshPreferences();
   }, [db]);
 
-  useEffect(() => {
-    void (async () => {
-      await ensureBundledCloudBackupConfig();
-      const update = await getCloudBackupUpdate(db).catch(() => null);
-      if (update) {
-        offerRemoteBackup(update);
+  async function writeLocalAccountId(accountId: string): Promise<void> {
+    await db.runAsync(
+      `INSERT INTO settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      CLOUD_ACCOUNT_ID_KEY,
+      accountId,
+    );
+  }
+
+  async function finishPrepare(session: CloudSession) {
+    await refreshPreferences();
+    const existing = await hasLocalBusinessData(db);
+    const setupDone = await isAppSetupComplete(db);
+    setExistingAccount(existing);
+    setSetupPending(!setupDone);
+    await registerCloudBackupTask().catch(() => undefined);
+    void syncCloudBackup(db).catch(() => {
+      // Sauvegarde en attente, retentée à la prochaine connexion.
+    });
+  }
+
+  async function prepareApp(session: CloudSession) {
+    setPreparing(true);
+    try {
+      const [localHasData, localDataAt, remote, storedAccountId] =
+        await Promise.all([
+          hasLocalBusinessData(db),
+          getLocalDataAt(db).catch(() => null),
+          getRemoteBackupMetadata(session).catch(() => null),
+          db
+            .getFirstAsync<{ value: string }>(
+              `SELECT value FROM settings WHERE key = ?`,
+              CLOUD_ACCOUNT_ID_KEY,
+            )
+            .then((row) => row?.value ?? null),
+        ]);
+      const accountBound =
+        Boolean(storedAccountId) && storedAccountId === session.accountId;
+
+      // Compte déjà lié à cette tablette → reprise silencieuse, sans question.
+      if (accountBound) {
+        // Si la base locale est vide (réinstallation, corruption) mais qu’une
+        // sauvegarde existe dans le compte, on la restaure quand même.
+        if (!localHasData && remote) {
+          await restoreCloudBackup(db, remote);
+          await setAppSetupComplete(db, false);
+          await writeLocalAccountId(session.accountId);
+        }
+        await finishPrepare(session);
         return;
       }
-      await syncOwnerAccount(db, { attempts: 2, timeoutMs: 5_000 }).catch(
+
+      const situation: SyncSituation = {
+        localHasData,
+        remoteHasData: Boolean(remote),
+        localDataAt,
+        remoteSnapshotAt: remote?.snapshotAt ?? null,
+        accountBound,
+      };
+
+      // Tablette avec données + compte non lié → demander à l’utilisateur.
+      if (localHasData) {
+        setSyncSituation(situation);
+        return;
+      }
+
+      // Tablette vide → charger les données du compte par défaut.
+      await writeLocalAccountId(session.accountId);
+      if (remote) {
+        await restoreCloudBackup(db, remote);
+        await setAppSetupComplete(db, false);
+      }
+      await finishPrepare(session);
+    } finally {
+      setPreparing(false);
+    }
+  }
+
+  async function handleKeepLocal() {
+    setPreparing(true);
+    try {
+      const session = await getSession().catch(() => null);
+      if (!session) return;
+      await writeLocalAccountId(session.accountId);
+      // Choix explicite « garder mes données » → on écrase la copie du compte.
+      await syncCloudBackup(db, { force: true, forceOverwrite: true }).catch(
         () => undefined,
       );
-      await registerCloudBackupTask();
-      await syncCloudBackup(db);
-    })().catch(() => {
-      // Une erreur r�seau reste dans la file d�attente locale.
-    });
+      await finishPrepare(session);
+    } finally {
+      setSyncSituation(null);
+      setPreparing(false);
+    }
+  }
+
+  async function handleLoadRemote() {
+    setPreparing(true);
+    try {
+      const session = await getSession().catch(() => null);
+      if (!session) return;
+      const remote = await getRemoteBackupMetadata(session).catch(() => null);
+      await writeLocalAccountId(session.accountId);
+      if (remote) {
+        await restoreCloudBackup(db, remote);
+        await setAppSetupComplete(db, false);
+      }
+      await finishPrepare(session);
+    } finally {
+      setSyncSituation(null);
+      setPreparing(false);
+    }
+  }
+
+  async function handleFreshStart() {
+    setPreparing(true);
+    try {
+      const session = await getSession().catch(() => null);
+      if (!session) return;
+      await resetLocalData(db);
+      await setAppSetupComplete(db, false);
+      await writeLocalAccountId(session.accountId);
+      await finishPrepare(session);
+    } finally {
+      setSyncSituation(null);
+      setPreparing(false);
+    }
+  }
+
+  async function handleAccountDone() {
+    const session = await getSession().catch(() => null);
+    if (!session) {
+      setSessionReady(false);
+      return;
+    }
+    setSessionReady(true);
+    await prepareApp(session);
+  }
+
+  async function handleSetupDone() {
+    await setAppSetupComplete(db, true);
+    setSetupPending(false);
+    await refreshPreferences();
+  }
+
+  async function handleDisconnect() {
+    await clearSession().catch(() => undefined);
+    setUser(null);
+    setSessionReady(false);
+    setSetupPending(false);
+    setSyncSituation(null);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const session = await getSession().catch(() => null);
+      if (cancelled) return;
+      if (!session) {
+        setSessionReady(false);
+        return;
+      }
+      setSessionReady(true);
+      await prepareApp(session);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [db]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        void syncOwnerAccount(db, { attempts: 1, timeoutMs: 3_000 }).catch(
-          () => undefined,
-        );
         void syncCloudBackup(db).catch(() => {
-          // Nouvelle tentative silencieuse � la prochaine reprise.
+          // Nouvelle tentative silencieuse à la prochaine reprise.
         });
       }
     });
     return () => subscription.remove();
-  }, [db]);
-
-  function offerRemoteBackup(update: CloudBackupUpdate) {
-    const compatible = update.schemaVersion <= BACKUP_FORMAT_VERSION;
-    const versionLine =
-      update.appVersion && update.appVersion !== "inconnue"
-        ? `\nVersion de la copie : ${update.appVersion}. Version install�e : ${APP_VERSION}.`
-        : "";
-    Alert.alert(
-      compatible
-        ? "Sauvegarde plus r�cente trouv�e"
-        : "Mise � jour de l�application requise",
-      compatible
-        ? `Une autre tablette a enregistr� une copie le ${formatDateTime(update.snapshotAt)}.${versionLine}\n\nLa restaurer remplacera les donn�es actuellement pr�sentes sur cette tablette.`
-        : `La derni�re copie vient de MerchantHQ ${update.appVersion}. Mettez cette tablette � jour avant de restaurer ses donn�es.`,
-      compatible
-        ? [
-            { text: "Plus tard", style: "cancel" },
-            {
-              text: "Restaurer",
-              onPress: () => void restoreRemoteBackup(update),
-            },
-          ]
-        : [{ text: "Fermer", style: "cancel" }],
-    );
-  }
-
-  async function restoreRemoteBackup(update: CloudBackupUpdate) {
-    setRestoringBackup(true);
-    try {
-      await restoreCloudBackup(db, update);
-      await initializeDatabase(db);
-      await refreshPreferences();
-      setUser(null);
-      setActiveModule("caisse");
-      setScreen("home_caisse");
-      setSaleFullscreen(false);
-      Alert.alert(
-        "Sauvegarde restaur�e",
-        "Les derni�res donn�es de la boutique sont maintenant disponibles sur cette tablette.",
-      );
-    } catch (caught) {
-      Alert.alert(
-        "Restauration impossible",
-        caught instanceof Error
-          ? caught.message
-          : "La copie Turso n�a pas pu �tre restaur�e.",
-      );
-    } finally {
-      setRestoringBackup(false);
-    }
-  }
+  }, [db, sessionReady]);
 
   async function lock(reason: "manual" | "inactivity" = "manual") {
     if (!user) return;
@@ -333,14 +449,14 @@ function Application() {
 
   async function openDashboard() {
     if (!dashboardCode) {
-      setDashboardCodeError("Entrez le code du compte Propri�taire.");
+      setDashboardCodeError("Entrez le code du compte Propriétaire.");
       return;
     }
     setCheckingDashboardCode(true);
     setDashboardCodeError("");
     try {
       if (!(await verifyBossPassword(db, dashboardCode))) {
-        setDashboardCodeError("Code incorrect. V�rifiez puis r�essayez.");
+        setDashboardCodeError("Code incorrect. Vérifiez puis réessayez.");
         return;
       }
       setDashboardAccessOpen(false);
@@ -350,7 +466,7 @@ function Application() {
       setDashboardCodeError(
         caught instanceof Error
           ? caught.message
-          : "Le code n�a pas pu �tre v�rifi�.",
+          : "Le code n’a pas pu être vérifié.",
       );
     } finally {
       setCheckingDashboardCode(false);
@@ -401,7 +517,7 @@ function Application() {
   useEffect(() => {
     if (!user) return;
     void prepareDeviceNotifications(db).catch(() => {
-      // Les fonctions m�tier restent disponibles si Android refuse les notifications.
+      // Les fonctions métier restent disponibles si Android refuse les notifications.
     });
     const subscription = subscribeToNotificationNavigation((target) => {
       navigateTo(target);
@@ -409,8 +525,37 @@ function Application() {
     return () => subscription.remove();
   }, [db, user]);
 
-  if (restoringBackup) {
-    return <LoadingScreen label="Restauration de la boutique…" logo={logoElement} />;
+if (sessionReady === null) {
+    return <LoadingScreen label="Préparation du compte…" logo={logoElement} />;
+  }
+
+  if (sessionReady === false) {
+    return <CloudAccountScreen onDone={() => void handleAccountDone()} />;
+  }
+
+  if (preparing) {
+    return <LoadingScreen label="Chargement des données du compte…" logo={logoElement} />;
+  }
+
+  if (syncSituation) {
+    return (
+      <SyncDecisionScreen
+        situation={syncSituation}
+        onFreshStart={() => void handleFreshStart()}
+        onKeepLocal={() => void handleKeepLocal()}
+        onLoadRemote={() => void handleLoadRemote()}
+      />
+    );
+  }
+
+  if (setupPending) {
+    return (
+      <SetupScreen
+        db={db}
+        existingAccount={existingAccount}
+        onDone={() => void handleSetupDone()}
+      />
+    );
   }
 
   if (!user) {
@@ -487,6 +632,7 @@ function Application() {
       content = (
         <SettingsScreen
           db={db}
+          onAccountDisconnected={() => void handleDisconnect()}
           onImported={() => setUser(null)}
           onPreferencesChange={() =>
             setPreferencesRevision((value) => value + 1)
@@ -594,7 +740,7 @@ function Application() {
                 </Text>
                 <View style={styles.offlineRow}>
                   <View style={styles.offlineDot} />
-                  <Text style={styles.offlineText}>Pr�t � vendre</Text>
+                  <Text style={styles.offlineText}>Prêt à vendre</Text>
                 </View>
               </View>
             </View>
@@ -698,14 +844,14 @@ function Application() {
 
       <ModalSheet
         onClose={closeDashboardAccess}
-        subtitle="Entrez le mot de passe d�fini lors de la cr�ation du compte Propri�taire."
-        title="Acc�s au Dashboard"
+        subtitle="Entrez le mot de passe défini lors de la création du compte Propriétaire."
+        title="Accès au Dashboard"
         visible={dashboardAccessOpen}
         width={440}
       >
         <TextField
           error={dashboardCodeError || undefined}
-          label="Code du compte Propri�taire"
+          label="Code du compte Propriétaire"
           onChangeText={(value) => {
             setDashboardCode(value);
             if (dashboardCodeError) setDashboardCodeError("");
@@ -734,6 +880,7 @@ function Application() {
 }
 
 export default function App() {
+  const styles = useThemedStyles(createStyles);
   const [fontsLoaded] = useFonts({
     IBMPlexSans_400Regular,
     IBMPlexSans_500Medium,
@@ -754,7 +901,7 @@ if (!fontsLoaded) {
         <View style={styles.databaseError}>
           <Icon name="TriangleAlert" size={30} color={colors.error} />
           <Text style={styles.databaseErrorTitle}>
-            Base de donn�es indisponible
+Base de données indisponible
           </Text>
           <Text style={styles.databaseErrorMessage}>{databaseError}</Text>
         </View>
@@ -771,7 +918,7 @@ if (!fontsLoaded) {
           console.error("SQLite initialization failed", error);
           setDatabaseError(error.message);
           Alert.alert(
-            "Base de donn�es indisponible",
+            "Base de données indisponible",
             error.message,
           );
         }}
@@ -783,7 +930,8 @@ if (!fontsLoaded) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   safe: {
     backgroundColor: colors.paper,
     flex: 1,
@@ -1091,4 +1239,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
+}
 

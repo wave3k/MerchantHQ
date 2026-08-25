@@ -6,7 +6,7 @@ import { TranslatedText as Text } from "./TranslatedText";
 import Icon from "./Icon";
 import type { IconName } from "./Icon";
 import { activeLanguage } from "../i18n";
-import { colors, fonts, space } from "../theme";
+import {useThemedStyles,  colors, fonts, space } from "../theme";
 
 function locale(): string {
   return activeLanguage === "en" ? "en-US" : "fr-FR";
@@ -37,6 +37,7 @@ function batteryIcon(level: number, charging: boolean): IconName {
 }
 
 export function LiveClock() {
+  const styles = useThemedStyles(createStyles);
   const [now, setNow] = useState(() => new Date());
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [charging, setCharging] = useState(false);
@@ -129,7 +130,8 @@ export function LiveClock() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   clock: {
     alignItems: "flex-end",
     gap: space.xxs,
@@ -161,3 +163,4 @@ const styles = StyleSheet.create({
     textTransform: "capitalize",
   },
 });
+}

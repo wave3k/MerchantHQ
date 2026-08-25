@@ -4,7 +4,7 @@ import { sha256 } from "@noble/hashes/sha256";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils";
 
 const LEGACY_ITERATIONS = 80_000;
-const ITERATIONS = 3_000;
+const ITERATIONS = 60_000;
 const KEY_LENGTH = 32;
 const HASH_PREFIX = "pbkdf2-v2";
 

@@ -6,7 +6,16 @@ import { CashRegisterIcon } from "./CashRegisterIcon";
 import { dimScreenForScreensaver } from "../data/screenBrightness";
 import { t } from "../i18n";
 import { locale } from "../domain/format";
-import { colors, fonts, radius, space } from "../theme";
+import { useThemedStyles, fonts, radius, space } from "../theme";
+
+// L’économiseur d’écran reste sombre quel que soit le thème actif.
+const DARK = {
+  ink: "#1F2938",
+  text: "#C9D2DF",
+  strong: "#B9C5D4",
+  accent: "#1D55C5",
+  accentInk: "#F8FAFF",
+};
 
 export function Screensaver({
   shopName,
@@ -15,6 +24,7 @@ export function Screensaver({
   shopName: string;
   onWake: () => void;
 }) {
+  const styles = useThemedStyles(createStyles);
   const [currentTime, setCurrentTime] = useState(() => new Date());
 
   useEffect(() => {
@@ -65,15 +75,15 @@ export function Screensaver({
       ]}
     >
       <CashRegisterIcon
-        color={colors.accentInk}
-        detail={colors.inkSurfaceText}
+        color={DARK.accentInk}
+        detail={DARK.text}
         size={112}
       />
       <Text accessibilityRole="header" style={styles.time}>{time}</Text>
       <Text style={styles.date}>{date}</Text>
       <Text style={styles.name}>{shopName}</Text>
       <View style={styles.prompt}>
-        <Icon name="Fingerprint" size={20} color={colors.accent} />
+        <Icon name="Fingerprint" size={20} color={DARK.accent} />
         <Text style={styles.promptText}>{t("Touchez pour vous reconnecter")}</Text>
       </View>
       <Text style={styles.brand}>MerchantHQ</Text>
@@ -81,10 +91,11 @@ export function Screensaver({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   screen: {
     alignItems: "center",
-    backgroundColor: colors.ink,
+    backgroundColor: DARK.ink,
     flex: 1,
     justifyContent: "center",
     padding: space.xl,
@@ -93,7 +104,7 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   time: {
-    color: colors.inkSurfaceText,
+    color: DARK.text,
     fontFamily: fonts.display,
     fontSize: 104,
     fontVariant: ["tabular-nums"],
@@ -101,7 +112,7 @@ const styles = StyleSheet.create({
     lineHeight: 112,
   },
   date: {
-    color: colors.inkSurfaceText,
+    color: DARK.text,
     fontFamily: fonts.bodyMedium,
     fontSize: 18,
     marginBottom: space.lg,
@@ -109,7 +120,7 @@ const styles = StyleSheet.create({
     textTransform: "capitalize",
   },
   name: {
-    color: colors.inkSurfaceText,
+    color: DARK.text,
     fontFamily: fonts.display,
     fontSize: 42,
     maxWidth: 760,
@@ -117,7 +128,7 @@ const styles = StyleSheet.create({
   },
   prompt: {
     alignItems: "center",
-    borderColor: colors.ruleStrong,
+    borderColor: DARK.strong,
     borderRadius: radius.round,
     borderWidth: 1,
     flexDirection: "row",
@@ -127,13 +138,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.lg,
   },
   promptText: {
-    color: colors.inkSurfaceText,
+    color: DARK.text,
     fontFamily: fonts.bodyMedium,
     fontSize: 15,
   },
   brand: {
     bottom: space.lg,
-    color: colors.inkSurfaceText,
+    color: DARK.text,
     fontFamily: fonts.mono,
     fontSize: 10,
     position: "absolute",
@@ -141,3 +152,4 @@ const styles = StyleSheet.create({
     opacity: 0.58,
   },
 });
+}

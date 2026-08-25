@@ -8,7 +8,7 @@ import {
   type ViewStyle,
 } from "react-native";
 
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { t } from "../i18n";
 
 interface TextFieldProps extends TextInputProps {
@@ -26,6 +26,7 @@ export function TextField({
   style,
   ...props
 }: TextFieldProps) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.wrapper, containerStyle]}>
       <Text style={styles.label}>{t(label)}</Text>
@@ -48,7 +49,8 @@ export function TextField({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   wrapper: {
     alignSelf: "stretch",
     gap: space.xxs,
@@ -84,3 +86,4 @@ const styles = StyleSheet.create({
     color: colors.error,
   },
 });
+}

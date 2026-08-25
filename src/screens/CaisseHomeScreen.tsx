@@ -16,7 +16,7 @@ import { TranslatedText as Text } from "../components/TranslatedText";
 import { listAppointments } from "../data/database";
 import { userCanAccessScreen } from "../domain/permissions";
 import { formatDateTime } from "../domain/format";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import type { Appointment, ScreenKey, User } from "../types";
 
 interface CaisseHomeScreenProps {
@@ -56,6 +56,7 @@ export function CaisseHomeScreen({
   user,
   onNavigate,
 }: CaisseHomeScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const [appointments, setAppointments] = useState<Appointment[] | null>(null);
   const [error, setError] = useState("");
@@ -231,7 +232,8 @@ export function CaisseHomeScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   actionsBand: {
     borderBottomColor: colors.rule,
     borderBottomWidth: 1,
@@ -416,3 +418,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 });
+}

@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { useEffect, useMemo, useState } from "react";
 import * as SecureStore from "./data/secureStore";
 
 const cobaltColors = {
@@ -116,13 +117,55 @@ function readTheme(): AppTheme {
   }
 }
 
-export const activeTheme = readTheme();
-export const colors =
-  activeTheme === "night"
-    ? nightColors
-    : activeTheme === "contrast"
-      ? contrastColors
-      : cobaltColors;
+export let activeTheme: AppTheme = readTheme();
+
+const palettes: Record<AppTheme, ColorPalette> = {
+  cobalt: cobaltColors,
+  night: nightColors,
+  contrast: contrastColors,
+};
+
+// Palette mutable : on y copie les couleurs du thème actif pour que le
+// thème puisse changer en direct sans redémarrer l’application.
+export const colors: ColorPalette = { ...cobaltColors };
+
+export function applyTheme(theme: AppTheme): void {
+  activeTheme = theme;
+  Object.assign(colors, palettes[theme]);
+  notifyThemeChange();
+}
+
+let themeListeners: Array<() => void> = [];
+
+export function subscribeTheme(listener: () => void): () => void {
+  themeListeners.push(listener);
+  return () => {
+    themeListeners = themeListeners.filter((candidate) => candidate !== listener);
+  };
+}
+
+function notifyThemeChange(): void {
+  for (const listener of themeListeners) {
+    listener();
+  }
+}
+
+export function useThemeVersion(): number {
+  const [version, setVersion] = useState(0);
+  useEffect(
+    () =>
+      subscribeTheme(() => {
+        setVersion((value) => value + 1);
+      }),
+    [],
+  );
+  return version;
+}
+
+export function useThemedStyles<T>(factory: () => T): T {
+  const version = useThemeVersion();
+  return useMemo(factory, [version]);
+}
 
 export const fonts = {
   display: "SpaceGrotesk_600SemiBold",

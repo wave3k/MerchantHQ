@@ -16,7 +16,7 @@ import { TranslatedText as Text } from "../components/TranslatedText";
 import { listProducts } from "../data/database";
 import { userCanAccessScreen } from "../domain/permissions";
 import { isLowStock } from "../domain/stock";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import type { Product, ScreenKey, User } from "../types";
 
 interface BoutiqueHomeScreenProps {
@@ -50,6 +50,7 @@ export function BoutiqueHomeScreen({
   user,
   onNavigate,
 }: BoutiqueHomeScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const [lowStock, setLowStock] = useState<Product[] | null>(null);
   const [error, setError] = useState("");
@@ -207,7 +208,8 @@ export function BoutiqueHomeScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   actionsBand: {
     borderBottomColor: colors.rule,
     borderBottomWidth: 1,
@@ -392,3 +394,4 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 });
+}

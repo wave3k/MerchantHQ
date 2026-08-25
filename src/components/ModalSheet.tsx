@@ -11,7 +11,7 @@ import {
 import Icon from "./Icon";
 import type { ReactNode } from "react";
 
-import { colors, fonts, radius, shadow, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, shadow, space } from "../theme";
 import { t } from "../i18n";
 
 interface ModalSheetProps {
@@ -31,6 +31,7 @@ export function ModalSheet({
   children,
   width = 560,
 }: ModalSheetProps) {
+  const styles = useThemedStyles(createStyles);
   return (
     <Modal
       animationType="fade"
@@ -85,7 +86,8 @@ export function ModalSheet({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   overlay: {
     alignItems: "center",
     backgroundColor: colors.overlay,
@@ -146,3 +148,4 @@ const styles = StyleSheet.create({
     paddingBottom: space.xxl,
   },
 });
+}

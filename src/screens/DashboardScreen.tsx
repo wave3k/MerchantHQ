@@ -12,7 +12,7 @@ import { AppButton } from "../components/AppButton";
 import { Badge, EmptyState, Page } from "../components/Page";
 import { getDashboardStats } from "../data/database";
 import { formatDateTime, formatMoney } from "../domain/format";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type { DashboardStats, ScreenKey, User } from "../types";
 
@@ -33,16 +33,29 @@ function StatCard({
   label: string;
   value: string;
   note: string;
-  tone?: "neutral" | "warning";
+  tone?: "neutral" | "warning" | "danger";
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
-    <View style={[styles.statCard, tone === "warning" && styles.statWarning]}>
+    <View
+      style={[
+        styles.statCard,
+        tone === "warning" && styles.statWarning,
+        tone === "danger" && styles.statDanger,
+      ]}
+    >
       <View style={styles.statTop}>
         <Text style={styles.statLabel}>{label}</Text>
         <Icon
           name={icon}
           size={20}
-          color={tone === "warning" ? colors.warning : colors.accent}
+          color={
+            tone === "warning"
+              ? colors.warning
+              : tone === "danger"
+                ? colors.error
+                : colors.accent
+          }
         />
       </View>
       <Text numberOfLines={1} adjustsFontSizeToFit style={styles.statValue}>
@@ -58,6 +71,7 @@ export function DashboardScreen({
   user,
   onNavigate,
 }: DashboardScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState("");
 
@@ -122,6 +136,13 @@ export function DashboardScreen({
                   label="Ce mois"
                   note={`${stats.newClientsMonth} nouveau(x) client(s)`}
                   value={formatMoney(stats.revenueMonth)}
+                />
+                <StatCard
+                  icon="Coins"
+                  label="Dépenses du jour"
+                  note={`${stats.expensesWeek} cette semaine · ${stats.expensesMonth} ce mois`}
+                  tone="danger"
+                  value={formatMoney(stats.expensesToday)}
                 />
               </>
             ) : (
@@ -236,7 +257,8 @@ export function DashboardScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   loading: {
     alignItems: "center",
     flex: 1,
@@ -265,6 +287,10 @@ const styles = StyleSheet.create({
   statWarning: {
     backgroundColor: colors.warningSoft,
     borderColor: colors.warningBorder,
+  },
+  statDanger: {
+    backgroundColor: colors.errorSoft,
+    borderColor: colors.errorBorder,
   },
   statTop: {
     alignItems: "center",
@@ -401,3 +427,4 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
 });
+}

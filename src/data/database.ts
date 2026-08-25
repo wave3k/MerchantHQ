@@ -207,8 +207,6 @@ CREATE INDEX IF NOT EXISTS idx_attendance_work_date ON attendance_records(work_d
 CREATE INDEX IF NOT EXISTS idx_attendance_employee_id ON attendance_records(employee_id);
 CREATE INDEX IF NOT EXISTS idx_appointments_scheduled_at ON appointments(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_appointments_client_id ON appointments(client_id);
-CREATE INDEX IF NOT EXISTS idx_expenses_created_at ON expenses(created_at);
-CREATE INDEX IF NOT EXISTS idx_expenses_category_id ON expenses(category_id);
 `;
 
 async function tableColumns(
@@ -544,7 +542,9 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
        ON users(employee_id) WHERE employee_id IS NOT NULL;
      CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
      CREATE INDEX IF NOT EXISTS idx_orders_client_id ON orders(client_id);
-     CREATE INDEX IF NOT EXISTS idx_orders_employee_id ON orders(employee_id);`,
+     CREATE INDEX IF NOT EXISTS idx_orders_employee_id ON orders(employee_id);
+     CREATE INDEX IF NOT EXISTS idx_expenses_created_at ON expenses(created_at);
+     CREATE INDEX IF NOT EXISTS idx_expenses_category_id ON expenses(category_id);`,
   );
 }
 
@@ -1310,6 +1310,9 @@ export async function saveExpense(
   input: ExpenseInput,
   actor: User,
 ): Promise<void> {
+  if (!Number.isFinite(input.amount) || input.amount <= 0) {
+    throw new Error("Le montant de la dépense doit être supérieur à zéro.");
+  }
   const timestamp = now();
   await db.runAsync(
     `INSERT INTO expenses
@@ -1638,7 +1641,7 @@ export async function saveAppointment(
     await db.runAsync(
       `UPDATE appointments
        SET client_id = ?, product_id = ?, scheduled_at = ?, reminder_minutes = ?, notes = ?,
-           status = 'scheduled', updated_at = ?
+           updated_at = ?
        WHERE id = ?`,
       input.clientId,
       input.productId,
@@ -1759,7 +1762,7 @@ export async function createOrder(
   const timestamp = now();
   const orderNumber = `CMD-${timestamp
     .replace(/\D/g, "")
-    .slice(2, 14)}-${Math.floor(Math.random() * 90 + 10)}`;
+    .slice(2, 14)}-${Math.floor(Math.random() * 9000 + 1000)}`;
 
   let createdOrderId = 0;
   await withWriteTransaction(db, async (transaction) => {
@@ -1902,7 +1905,7 @@ export async function getStatistics(
   period: StatisticsPeriod,
 ): Promise<StatisticsData> {
   const startAt = startForPeriod(period, new Date()).toISOString();
-  const [summary, clients, topProducts, topEmployees, revenueByDay, recentOrders] =
+  const [summary, clients, topProducts, topEmployees, revenueByDay, expensesByDay, recentOrders] =
     await Promise.all([
       db.getFirstAsync<{
         revenue: number;
@@ -1959,11 +1962,24 @@ export async function getStatistics(
          ORDER BY day ASC`,
         startAt,
       ),
+      db.getAllAsync<StatisticsData["expensesByDay"][number]>(
+        `SELECT date(created_at, 'localtime') AS day,
+          SUM(amount) AS total, COUNT(*) AS count
+         FROM expenses
+         WHERE created_at >= ?
+         GROUP BY date(created_at, 'localtime')
+         ORDER BY day ASC`,
+        startAt,
+      ),
       listOrders(db, 8),
     ]);
 
   const revenue = summary?.revenue ?? 0;
   const orderCount = summary?.orderCount ?? 0;
+  const expensesTotal = expensesByDay.reduce(
+    (sum, item) => sum + item.total,
+    0,
+  );
   return {
     period,
     startAt,
@@ -1972,9 +1988,11 @@ export async function getStatistics(
     itemsSold: summary?.itemsSold ?? 0,
     averageBasket: orderCount > 0 ? Math.round(revenue / orderCount) : 0,
     newClients: clients?.count ?? 0,
+    expenses: expensesTotal,
     topProducts,
     topEmployees,
     revenueByDay,
+    expensesByDay,
     recentOrders,
   };
 }
@@ -1987,7 +2005,7 @@ export async function getDashboardStats(
   const week = startOfWeek(current).toISOString();
   const month = startOfMonth(current).toISOString();
 
-  const [revenue, clients, employees, lowStock, topProducts, recentOrders] =
+  const [revenue, clients, employees, lowStock, expenses, topProducts, recentOrders] =
     await Promise.all([
       db.getFirstAsync<{
         revenueToday: number;
@@ -2027,6 +2045,20 @@ export async function getDashboardStats(
         `SELECT COUNT(*) AS count FROM products
          WHERE is_active = 1 AND tracks_stock = 1 AND stock <= low_stock_threshold`,
       ),
+      db.getFirstAsync<{
+        expensesToday: number;
+        expensesWeek: number;
+        expensesMonth: number;
+      }>(
+        `SELECT
+          COALESCE(SUM(CASE WHEN created_at >= ? THEN amount ELSE 0 END), 0) AS expensesToday,
+          COALESCE(SUM(CASE WHEN created_at >= ? THEN amount ELSE 0 END), 0) AS expensesWeek,
+          COALESCE(SUM(CASE WHEN created_at >= ? THEN amount ELSE 0 END), 0) AS expensesMonth
+         FROM expenses`,
+        day,
+        week,
+        month,
+      ),
       db.getAllAsync<{ name: string; quantity: number; revenue: number }>(
         `SELECT oi.product_name AS name, SUM(oi.quantity) AS quantity,
           SUM(oi.subtotal) AS revenue
@@ -2051,6 +2083,9 @@ export async function getDashboardStats(
     newClientsMonth: clients?.newClientsMonth ?? 0,
     activeEmployees: employees?.count ?? 0,
     lowStockCount: lowStock?.count ?? 0,
+    expensesToday: expenses?.expensesToday ?? 0,
+    expensesWeek: expenses?.expensesWeek ?? 0,
+    expensesMonth: expenses?.expensesMonth ?? 0,
     topProducts,
     recentOrders,
   };

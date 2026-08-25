@@ -54,20 +54,3 @@ export function shouldOfferRemoteRestore(
   const localTime = new Date(comparison.localDataAt).getTime();
   return !Number.isFinite(localTime) || remoteTime > localTime;
 }
-
-export function tursoPipelineUrl(value: string): string {
-  const normalized = value.trim().replace(/^libsql:\/\//i, "https://");
-  let parsed: URL;
-  try {
-    parsed = new URL(normalized);
-  } catch {
-    throw new Error("L’URL Turso n’est pas valide.");
-  }
-  if (parsed.protocol !== "https:" || !parsed.hostname) {
-    throw new Error("Utilisez une URL Turso libsql:// ou https:// sécurisée.");
-  }
-  parsed.pathname = `${parsed.pathname.replace(/\/+$/, "")}/v2/pipeline`;
-  parsed.search = "";
-  parsed.hash = "";
-  return parsed.toString();
-}

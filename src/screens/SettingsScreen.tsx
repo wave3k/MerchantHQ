@@ -1,8 +1,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import * as Updates from "expo-updates";
 import {
   Alert,
-  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -19,14 +17,13 @@ import { Page } from "../components/Page";
 import { TextField } from "../components/TextField";
 import { exportBackup, importBackup } from "../data/backup";
 import {
-  ensureBundledCloudBackupConfig,
-  getCloudBackupConfig,
   getCloudBackupStatus,
-  saveCloudBackupConfig,
+  getRemoteBackupMetadata,
+  restoreCloudBackup,
   syncCloudBackup,
   type CloudBackupStatus,
-} from "../data/cloudBackup";
-import { registerCloudBackupTask } from "../data/backgroundSync";
+} from "../data/cloudApi";
+import { getSession } from "../data/cloudSession";
 import {
   getSetting,
   seedDemoData,
@@ -46,9 +43,9 @@ import {
   type AppLanguage,
   type CurrencyCode,
 } from "../domain/format";
-import { colors, fonts, radius, space } from "../theme";
+import { useThemedStyles, applyTheme, colors, fonts, radius, space } from "../theme";
 import type { User } from "../types";
-import { t } from "../i18n";
+import { setActiveLanguage, t, type Language } from "../i18n";
 import { TranslatedText as Text } from "../components/TranslatedText";
 
 interface SettingsScreenProps {
@@ -57,6 +54,7 @@ interface SettingsScreenProps {
   onShopNameChange: (value: string) => void;
   onPreferencesChange: () => void;
   onImported: () => void;
+  onAccountDisconnected: () => void;
 }
 
 function SettingCard({
@@ -70,6 +68,7 @@ function SettingCard({
   description: string;
   children: React.ReactNode;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
@@ -95,6 +94,7 @@ function ChoiceRow<T extends string>({
   options: Array<{ value: T; label: string }>;
   onChange: (value: T) => void;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.choiceRow}>
       {options.map((option) => {
@@ -126,6 +126,7 @@ function ToggleRow({
   value: boolean;
   onChange: (value: boolean) => void;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <Pressable
       accessibilityRole="switch"
@@ -147,12 +148,12 @@ export function SettingsScreen({
   onShopNameChange,
   onPreferencesChange,
   onImported,
+  onAccountDisconnected,
 }: SettingsScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const [shopName, setShopName] = useState("");
-  const [cloudUrl, setCloudUrl] = useState("");
-  const [cloudToken, setCloudToken] = useState("");
-  const [cloudStatus, setCloudStatus] = useState<CloudBackupStatus | null>(null);
+  const [accountStatus, setAccountStatus] = useState<CloudBackupStatus | null>(null);
   const [developerMode, setDeveloperMode] = useState(false);
   const [versionTaps, setVersionTaps] = useState(0);
   const [currencyPrimary, setCurrencyPrimary] = useState<CurrencyCode>("CDF");
@@ -185,8 +186,8 @@ export function SettingsScreen({
     | "import"
     | "seed"
     | "notifications"
-    | "cloud-save"
     | "cloud-sync"
+    | "cloud-restore"
     | null
   >(null);
 
@@ -274,15 +275,104 @@ export function SettingsScreen({
 
   useEffect(() => {
     void (async () => {
-      await ensureBundledCloudBackupConfig();
-      const [config, status] = await Promise.all([
-        getCloudBackupConfig(),
-        getCloudBackupStatus(db),
-      ]);
-      setCloudUrl(config.url);
-      setCloudStatus(status);
+      const session = await getSession().catch(() => null);
+      const status = session ? await getCloudBackupStatus(db, session).catch(() => null) : null;
+      setAccountStatus(status);
     })();
   }, [db]);
+
+  async function runCloudSyncNow() {
+    setBusy("cloud-sync");
+    try {
+      const result = await syncCloudBackup(db, { force: true });
+      setAccountStatus(result);
+      if (result.outcome === "synced") {
+        Alert.alert(
+          "Sauvegarde terminée",
+          `Les données du ${result.lastSuccessDate ?? "jour"} sont enregistrées dans votre compte.`,
+        );
+      } else if (result.outcome === "not_configured") {
+        Alert.alert(
+          "Compte requis",
+          "Connectez-vous au compte marchand avant de sauvegarder.",
+        );
+      } else if (result.outcome === "remote_newer") {
+        Alert.alert(
+          "Copie plus récente disponible",
+          "Une autre tablette possède une copie plus récente. Redémarrez l’application pour la charger ou garder vos données.",
+        );
+      } else {
+        Alert.alert(
+          "Sauvegarde en attente",
+          result.lastError ??
+            "Internet est indisponible. La sauvegarde sera envoyée à la prochaine connexion.",
+        );
+      }
+    } catch (caught) {
+      Alert.alert(
+        "Sauvegarde impossible",
+        caught instanceof Error ? caught.message : "La sauvegarde restera en attente.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runCloudRestore() {
+    setBusy("cloud-restore");
+    try {
+      const session = await getSession();
+      if (!session) {
+        Alert.alert("Compte requis", "Connectez-vous au compte marchand.");
+        return;
+      }
+      const remote = await getRemoteBackupMetadata(session);
+      if (!remote) {
+        Alert.alert(
+          "Aucune sauvegarde",
+          "Votre compte ne contient encore aucune sauvegarde.",
+        );
+        return;
+      }
+      Alert.alert(
+        "Restaurer la sauvegarde du compte ?",
+        `Copie du ${new Date(remote.snapshotAt).toLocaleString(locale())} (app ${remote.appVersion}). Les données actuelles de la tablette seront remplacées.`,
+        [
+          { text: "Annuler", style: "cancel" },
+          {
+            text: "Restaurer",
+            style: "destructive",
+            onPress: () => {
+              void (async () => {
+                try {
+                  await restoreCloudBackup(db, remote);
+                  Alert.alert(
+                    "Sauvegarde restaurée",
+                    "Les données du compte ont été restaurées. Reconnectez-vous.",
+                    [{ text: "Se reconnecter", onPress: onImported }],
+                  );
+                } catch (e) {
+                  Alert.alert(
+                    "Restauration impossible",
+                    e instanceof Error ? e.message : "Impossible de restaurer.",
+                  );
+                } finally {
+                  setBusy(null);
+                }
+              })();
+            },
+          },
+        ],
+      );
+    } catch (caught) {
+      Alert.alert(
+        "Restauration impossible",
+        caught instanceof Error ? caught.message : "Vérifiez la connexion Internet.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function saveName() {
     if (shopName.trim().length < 2) {
@@ -332,6 +422,8 @@ export function SettingsScreen({
         SecureStore.setItemAsync("commerce.theme", theme),
         SecureStore.setItemAsync("commerce.language", language),
       ]);
+      applyTheme(theme);
+      setActiveLanguage(language);
       configureFormatting({
         primary: currencyPrimary,
         secondary: currencySecondary === "none" ? null : currencySecondary,
@@ -341,16 +433,8 @@ export function SettingsScreen({
       onPreferencesChange();
       Alert.alert(
         "Préférences enregistrées",
-        "L’application va redémarrer pour appliquer la langue et le thème.",
+        "Le thème et la langue ont été appliqués.",
       );
-      if (Platform.OS !== "web") {
-        setTimeout(() => {
-          void Updates.reloadAsync().catch(() => {
-            // Le redémarrage n’est pas disponible ici : les réglages
-            // seront appliqués au prochain démarrage.
-          });
-        }, 900);
-      }
     } catch (caught) {
       Alert.alert(
         "Enregistrement impossible",
@@ -515,71 +599,6 @@ export function SettingsScreen({
     }
   }
 
-  async function saveCloud() {
-    setBusy("cloud-save");
-    try {
-      await saveCloudBackupConfig(cloudUrl, cloudToken);
-      setCloudToken("");
-      const backgroundEnabled = await registerCloudBackupTask();
-      const status = await getCloudBackupStatus(db);
-      setCloudStatus(status);
-      Alert.alert(
-        "Connexion Turso enregistrée",
-        backgroundEnabled
-          ? "Le jeton est chiffré sur cette tablette. La sauvegarde sera vérifiée après 21 h."
-          : "Le jeton est chiffré sur cette tablette. Dans Expo Go, la reprise au premier plan assurera les tentatives ; un build Android active aussi l’arrière-plan.",
-      );
-    } catch (caught) {
-      Alert.alert(
-        "Configuration impossible",
-        caught instanceof Error
-          ? caught.message
-          : "La connexion Turso n’a pas été enregistrée.",
-      );
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function runCloudSync() {
-    setBusy("cloud-sync");
-    try {
-      const result = await syncCloudBackup(db, { force: true });
-      setCloudStatus(result);
-      if (result.outcome === "synced") {
-        Alert.alert(
-          "Sauvegarde terminée",
-          `Les données du ${result.lastSuccessDate ?? "jour"} sont enregistrées dans Turso.`,
-        );
-      } else if (result.outcome === "not_configured") {
-        Alert.alert(
-          "Jeton requis",
-          "Collez le jeton Turso puis enregistrez la connexion.",
-        );
-      } else if (result.outcome === "remote_newer") {
-        Alert.alert(
-          "Copie plus récente disponible",
-          "Une autre tablette possède une copie plus récente. Relancez MerchantHQ pour l’examiner et la restaurer sans l’écraser.",
-        );
-      } else {
-        Alert.alert(
-          "Sauvegarde en attente",
-          result.lastError ??
-            "Internet est indisponible. Une nouvelle tentative sera faite à la prochaine connexion.",
-        );
-      }
-    } catch (caught) {
-      Alert.alert(
-        "Sauvegarde impossible",
-        caught instanceof Error
-          ? caught.message
-          : "La sauvegarde restera en attente.",
-      );
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function handleVersionPress() {
     if (developerMode) return;
     const next = versionTaps + 1;
@@ -628,6 +647,54 @@ export function SettingsScreen({
           loading={busy === "save"}
           onPress={() => void saveName()}
         />
+      </SettingCard>
+
+      <SettingCard
+        description="Votre boutique est sauvegardée chaque soir, même sans connexion au moment de fermer."
+        icon="CloudUpload"
+        title="Compte connecté"
+      >
+        <View style={styles.cloudRow}>
+          <View style={styles.cloudDot} />
+          <Text style={styles.cloudText}>
+            {accountStatus?.username
+              ? `Connecté : ${accountStatus.username}`
+              : "Compte non chargé"}
+          </Text>
+        </View>
+        <Text style={styles.cloudDetail}>
+          {accountStatus?.pendingDate
+            ? `Sauvegarde du ${accountStatus.pendingDate} en attente — sera envoyée à la prochaine connexion.`
+            : accountStatus?.lastSuccessAt
+              ? `Dernière sauvegarde : ${new Date(accountStatus.lastSuccessAt).toLocaleString(locale())}.`
+              : "Aucune sauvegarde envoyée pour l’instant."}
+        </Text>
+        {accountStatus?.lastError ? (
+          <Text style={styles.cloudDetailError}>{accountStatus.lastError}</Text>
+        ) : null}
+        <View style={styles.actions}>
+          <AppButton
+            disabled={!accountStatus?.configured}
+            icon="CloudUpload"
+            label="Sauvegarder maintenant"
+            loading={busy === "cloud-sync"}
+            onPress={() => void runCloudSyncNow()}
+          />
+          <AppButton
+            disabled={!accountStatus?.configured}
+            icon="Download"
+            label="Restaurer depuis le compte"
+            loading={busy === "cloud-restore"}
+            onPress={() => void runCloudRestore()}
+            tone="secondary"
+          />
+          <AppButton
+            icon="LogOut"
+            label="Se déconnecter"
+            onPress={() => void onAccountDisconnected()}
+            tone="secondary"
+          />
+        </View>
       </SettingCard>
 
       <View style={[styles.columns, width < 940 && styles.columnsStacked]}>
@@ -937,79 +1004,6 @@ export function SettingsScreen({
           </View>
 
           <SettingCard
-            description="Une copie est envoyée après 21 h. Sans Internet, elle attend la prochaine connexion."
-            icon="CloudUpload"
-            title="Copie en ligne"
-          >
-            <TextField
-              autoCapitalize="none"
-              autoCorrect={false}
-              label="Adresse de la sauvegarde"
-              onChangeText={setCloudUrl}
-              placeholder="libsql://votre-base.turso.io"
-              value={cloudUrl}
-            />
-            <TextField
-              autoCapitalize="none"
-              autoCorrect={false}
-              helper={
-                cloudStatus?.configured
-                  ? "Une clé est déjà enregistrée. Laissez vide pour la conserver."
-                  : "La clé est protégée par Android et absente des fichiers de sauvegarde."
-              }
-              label="Clé d’accès"
-              onChangeText={setCloudToken}
-              placeholder={
-                cloudStatus?.configured
-                  ? "Clé enregistrée"
-                  : "Collez la clé une seule fois"
-              }
-              secureTextEntry
-              value={cloudToken}
-            />
-            <View style={styles.cloudStatus}>
-              <View
-                style={[
-                  styles.statusDot,
-                  cloudStatus?.lastError
-                    ? styles.statusDotWarning
-                    : cloudStatus?.lastSuccessAt
-                      ? styles.statusDotSuccess
-                      : null,
-                ]}
-              />
-              <Text style={styles.statusText}>
-                {!cloudStatus?.configured
-                  ? "Copie en ligne non configurée"
-                  : cloudStatus.pendingDate
-                    ? `Copie du ${cloudStatus.pendingDate} en attente`
-                    : cloudStatus.lastSuccessAt
-                      ? `Dernière copie : ${new Date(cloudStatus.lastSuccessAt).toLocaleString(locale())}`
-                      : "Prête, aucune copie envoyée"}
-              </Text>
-            </View>
-            {cloudStatus?.lastError ? (
-              <Text style={styles.cloudError}>{cloudStatus.lastError}</Text>
-            ) : null}
-            <View style={styles.actions}>
-              <AppButton
-                icon="ShieldCheck"
-                label="Enregistrer"
-                loading={busy === "cloud-save"}
-                onPress={() => void saveCloud()}
-              />
-              <AppButton
-                disabled={!cloudStatus?.configured}
-                icon="CloudUpload"
-                label="Copier maintenant"
-                loading={busy === "cloud-sync"}
-                onPress={() => void runCloudSync()}
-                tone="secondary"
-              />
-            </View>
-          </SettingCard>
-
-          <SettingCard
             description="Ajoute quelques exemples seulement si la liste des produits est vide."
             icon="FlaskConical"
             title="Données d’essai"
@@ -1062,7 +1056,8 @@ export function SettingsScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   columns: {
     alignItems: "stretch",
     flexDirection: "row",
@@ -1311,31 +1306,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
   },
-  cloudStatus: {
+  cloudRow: {
     alignItems: "center",
     flexDirection: "row",
     gap: space.xs,
   },
-  statusDot: {
-    backgroundColor: colors.muted,
+  cloudDot: {
+    backgroundColor: colors.success,
     borderRadius: radius.round,
     height: 8,
     width: 8,
   },
-  statusDotWarning: {
-    backgroundColor: colors.warning,
-  },
-  statusDotSuccess: {
-    backgroundColor: colors.success,
-  },
-  statusText: {
+  cloudText: {
     color: colors.ink2,
     flex: 1,
     fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+  },
+  cloudDetail: {
+    color: colors.muted,
+    fontFamily: fonts.body,
     fontSize: 13,
     lineHeight: 19,
   },
-  cloudError: {
+  cloudDetailError: {
     color: colors.error,
     fontFamily: fonts.body,
     fontSize: 12,
@@ -1358,3 +1352,4 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
 });
+}

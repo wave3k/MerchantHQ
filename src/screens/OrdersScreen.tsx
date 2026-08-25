@@ -36,7 +36,7 @@ import {
   maximumSaleQuantity,
   tracksStock,
 } from "../domain/stock";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type {
   CartLine,
@@ -60,6 +60,7 @@ export function OrdersScreen({
   onSaleModeChange,
   user,
 }: OrdersScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const [mode, setMode] = useState<"sale" | "history">("history");
   const [products, setProducts] = useState<Product[]>([]);
@@ -68,6 +69,7 @@ export function OrdersScreen({
   const [orders, setOrders] = useState<Order[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<number | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<number | null>(
@@ -154,14 +156,32 @@ export function OrdersScreen({
 
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("fr");
-    if (!query) return products;
-    return products.filter((product) =>
-      [product.name, product.category, product.sku ?? ""]
+    return products.filter((product) => {
+      if (
+        categoryFilter &&
+        product.category.toLocaleLowerCase("fr") !==
+          categoryFilter.toLocaleLowerCase("fr")
+      ) {
+        return false;
+      }
+
+      if (!query) return true;
+      return [product.name, product.category, product.sku ?? ""]
         .join(" ")
         .toLocaleLowerCase("fr")
-        .includes(query),
-    );
-  }, [products, search]);
+        .includes(query);
+    });
+  }, [products, search, categoryFilter]);
+
+  const categories = useMemo(() => {
+    return Array.from(
+      new Set(
+        products
+          .map((product) => product.category.trim())
+          .filter((category) => category.length > 0),
+      ),
+    ).sort((left, right) => left.localeCompare(right, "fr"));
+  }, [products]);
 
   const total = cart.reduce(
     (sum, line) => sum + line.product.price * line.quantity,
@@ -434,6 +454,60 @@ export function OrdersScreen({
             placeholder="Rechercher un produit, une catégorie ou un code"
             value={search}
           />
+          {categories.length > 0 ? (
+            <ScrollView
+              horizontal
+              contentContainerStyle={styles.categoryTiles}
+              showsHorizontalScrollIndicator={false}
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: categoryFilter === null }}
+                onPress={() => setCategoryFilter(null)}
+                style={({ pressed }) => [
+                  styles.categoryTile,
+                  categoryFilter === null && styles.categoryTileActive,
+                  pressed && styles.categoryTilePressed,
+                ]}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.categoryTileText,
+                    categoryFilter === null && styles.categoryTileTextActive,
+                  ]}
+                >
+                  Toutes
+                </Text>
+              </Pressable>
+              {categories.map((category) => {
+                const active = categoryFilter === category;
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    key={category}
+                    onPress={() => setCategoryFilter(active ? null : category)}
+                    style={({ pressed }) => [
+                      styles.categoryTile,
+                      active && styles.categoryTileActive,
+                      pressed && styles.categoryTilePressed,
+                    ]}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.categoryTileText,
+                        active && styles.categoryTileTextActive,
+                      ]}
+                    >
+                      {category}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : null}
           {filtered.length === 0 ? (
             <EmptyState
               icon="Package"
@@ -562,41 +636,43 @@ export function OrdersScreen({
                       {formatMoney(line.product.price)} l’unité
                     </Text>
                   </View>
-                  <View style={styles.stepper}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Retirer un ${line.product.name}`}
-                      onPress={() => changeQuantity(line.product.id, -1)}
-                      style={styles.stepButton}
-                    >
-                      <Icon
-                        name={line.quantity === 1 ? "Trash2" : "Minus"}
-                        size={18}
-                        color={
-                          line.quantity === 1 ? colors.error : colors.ink2
+                  <View style={styles.cartLineMeta}>
+                    <View style={styles.stepper}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Retirer un ${line.product.name}`}
+                        onPress={() => changeQuantity(line.product.id, -1)}
+                        style={styles.stepButton}
+                      >
+                        <Icon
+                          name={line.quantity === 1 ? "Trash2" : "Minus"}
+                          size={18}
+                          color={
+                            line.quantity === 1 ? colors.error : colors.ink2
+                          }
+                        />
+                      </Pressable>
+                      <Text style={styles.quantity}>{line.quantity}</Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Ajouter un ${line.product.name}`}
+                        disabled={
+                          line.quantity >= maximumSaleQuantity(line.product)
                         }
-                      />
-                    </Pressable>
-                    <Text style={styles.quantity}>{line.quantity}</Text>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Ajouter un ${line.product.name}`}
-                      disabled={
-                        line.quantity >= maximumSaleQuantity(line.product)
-                      }
-                      onPress={() => changeQuantity(line.product.id, 1)}
-                      style={[
-                        styles.stepButton,
-                        line.quantity >= maximumSaleQuantity(line.product) &&
-                          styles.stepButtonDisabled,
-                      ]}
-                    >
-                      <Icon name="Plus" size={18} color={colors.ink2} />
-                    </Pressable>
+                        onPress={() => changeQuantity(line.product.id, 1)}
+                        style={[
+                          styles.stepButton,
+                          line.quantity >= maximumSaleQuantity(line.product) &&
+                            styles.stepButtonDisabled,
+                        ]}
+                      >
+                        <Icon name="Plus" size={18} color={colors.ink2} />
+                      </Pressable>
+                    </View>
+                    <Text style={styles.lineTotal}>
+                      {formatMoney(line.product.price * line.quantity)}
+                    </Text>
                   </View>
-                  <Text style={styles.lineTotal}>
-                    {formatMoney(line.product.price * line.quantity)}
-                  </Text>
                 </View>
               ))
             )}
@@ -834,7 +910,8 @@ export function OrdersScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   loading: {
     alignItems: "center",
     flex: 1,
@@ -919,7 +996,7 @@ const styles = StyleSheet.create({
   },
   catalog: {
     flex: 1.55,
-    gap: space.sm,
+    gap: space.xs,
     minWidth: 0,
   },
   catalogHeader: {
@@ -939,12 +1016,42 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: space.xxs,
   },
+  categoryTiles: {
+    gap: space.xs,
+    paddingBottom: space.xxs,
+  },
+  categoryTile: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceStrong,
+    borderColor: colors.rule,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: "center",
+    paddingHorizontal: space.md,
+  },
+  categoryTileActive: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
+  },
+  categoryTilePressed: {
+    transform: [{ translateY: 1 }],
+  },
+  categoryTileText: {
+    color: colors.ink2,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    lineHeight: 16,
+  },
+  categoryTileTextActive: {
+    color: colors.accentDark,
+  },
   productList: {
     gap: space.sm,
+    paddingTop: space.xs,
     paddingBottom: space.lg,
   },
   productListView: {
-    flex: 1,
     minHeight: 0,
   },
   productColumns: {
@@ -1068,13 +1175,12 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.rule,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: space.xs,
     paddingVertical: space.sm,
   },
   cartLineCopy: {
     flex: 1,
-    minWidth: 130,
+    minWidth: 0,
   },
   cartLineName: {
     color: colors.ink,
@@ -1085,6 +1191,10 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontFamily: fonts.body,
     fontSize: 11,
+  },
+  cartLineMeta: {
+    alignItems: "flex-end",
+    gap: space.xxs,
   },
   stepper: {
     alignItems: "center",
@@ -1115,7 +1225,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontVariant: ["tabular-nums"],
     textAlign: "right",
-    width: "100%",
   },
   cartFooter: {
     borderTopColor: colors.rule,
@@ -1306,3 +1415,4 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
 });
+}

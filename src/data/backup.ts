@@ -13,6 +13,9 @@ const TABLES = [
   "users",
   "attendance_records",
   "products",
+  "categories",
+  "expense_categories",
+  "expenses",
   "clients",
   "appointments",
   "orders",
@@ -116,6 +119,9 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
     "reason",
     "created_at",
   ],
+  categories: ["id", "name", "created_at"],
+  expense_categories: ["id", "name", "is_predefined", "created_at"],
+  expenses: ["id", "category_id", "amount", "notes", "created_by", "created_by_name", "created_at"],
   activity_logs: [
     "id",
     "user_id",
@@ -133,11 +139,26 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
 
 export interface BackupFile {
   format: "commerce-manager-backup";
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   appVersion?: string;
   exportedAt: string;
   exportedBy: string;
   data: Partial<Record<TableName, Record<string, unknown>[]>>;
+}
+
+export function emptyBackupPayload(): BackupFile {
+  const data = {} as BackupFile["data"];
+  for (const table of TABLES) {
+    data[table] = [];
+  }
+  return {
+    format: "commerce-manager-backup",
+    version: BACKUP_FORMAT_VERSION,
+    appVersion: APP_VERSION,
+    exportedAt: new Date().toISOString(),
+    exportedBy: "Réinitialisation",
+    data,
+  };
 }
 
 export async function createBackupPayload(
@@ -184,7 +205,7 @@ function assertBackup(value: unknown): asserts value is BackupFile {
     !value ||
     typeof value !== "object" ||
     (value as BackupFile).format !== "commerce-manager-backup" ||
-    ![1, 2, 3, 4, 5, 6, 7].includes((value as BackupFile).version)
+    ![1, 2, 3, 4, 5, 6, 7, 8].includes((value as BackupFile).version)
   ) {
     throw new Error("Ce fichier n’est pas une sauvegarde MerchantHQ valide.");
   }
@@ -193,7 +214,8 @@ function assertBackup(value: unknown): asserts value is BackupFile {
     const optionalForOlderBackup =
       (table === "employees" && version === 1) ||
       (table === "appointments" && version < 3) ||
-      (table === "attendance_records" && version < 7);
+      (table === "attendance_records" && version < 7) ||
+      ((table === "categories" || table === "expense_categories" || table === "expenses") && version < 8);
     if (
       !optionalForOlderBackup &&
       !Array.isArray((value as BackupFile).data?.[table])
@@ -265,6 +287,9 @@ export async function restoreBackupPayload(
       DELETE FROM appointments;
       DELETE FROM attendance_records;
       DELETE FROM activity_logs;
+      DELETE FROM expenses;
+      DELETE FROM expense_categories;
+      DELETE FROM categories;
       DELETE FROM products;
       DELETE FROM clients;
       DELETE FROM users;

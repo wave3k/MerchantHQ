@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from "expo-sqlite";
-import { Alert, Pressable, StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { useEffect, useMemo, useState } from "react";
 
 import Icon from "../components/Icon";
@@ -16,7 +16,7 @@ import {
 } from "../data/database";
 import { formatDateTime, formatMoney } from "../domain/format";
 import { userCan } from "../domain/permissions";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type { Expense, ExpenseCategory, ExpenseInput, User } from "../types";
 
@@ -26,6 +26,7 @@ interface ExpensesScreenProps {
 }
 
 export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [search, setSearch] = useState("");
@@ -319,26 +320,32 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
               );
             })}
           </View>
-          <View style={styles.newCategoryRow}>
-            <TextField
-              containerStyle={styles.flexField}
-              label="Nouvelle catégorie"
-              onChangeText={setNewCategory}
-              onSubmitEditing={() => void submitNewCategory()}
-              placeholder="Ex. Réparations"
-              value={newCategory}
-            />
-            <Pressable
-              accessibilityRole="button"
-              disabled={busy}
-              onPress={() => void submitNewCategory()}
-              style={({ pressed }) => [
-                styles.newCategoryButton,
-                pressed && styles.newCategoryButtonPressed,
-              ]}
-            >
-              <Icon color={colors.accentInk} name="Plus" size={18} />
-            </Pressable>
+          <View style={styles.newCategoryGroup}>
+            <Text style={styles.categoryLabel}>Nouvelle catégorie</Text>
+            <View style={styles.newCategoryRow}>
+              <TextInput
+                accessibilityLabel="Nouvelle catégorie"
+                onChangeText={setNewCategory}
+                onSubmitEditing={() => void submitNewCategory()}
+                placeholder="Ex. Réparations"
+                placeholderTextColor={colors.faint}
+                selectionColor={colors.accent}
+                style={styles.newCategoryInput}
+                value={newCategory}
+              />
+              <Pressable
+                accessibilityLabel="Ajouter la catégorie"
+                accessibilityRole="button"
+                disabled={busy}
+                onPress={() => void submitNewCategory()}
+                style={({ pressed }) => [
+                  styles.newCategoryButton,
+                  pressed && styles.newCategoryButtonPressed,
+                ]}
+              >
+                <Icon color={colors.accentInk} name="Plus" size={18} />
+              </Pressable>
+            </View>
           </View>
         </View>
         <TextField
@@ -368,7 +375,8 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   categoryChips: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -494,22 +502,35 @@ const styles = StyleSheet.create({
   categoryChoiceTextSelected: {
     color: colors.accent,
   },
-  newCategoryRow: {
-    alignItems: "flex-end",
-    flexDirection: "row",
-    gap: space.sm,
+  newCategoryGroup: {
+    gap: space.xxs,
     marginTop: space.sm,
   },
-  flexField: {
+  newCategoryRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: space.sm,
+  },
+  newCategoryInput: {
+    backgroundColor: colors.surfaceStrong,
+    borderColor: colors.ruleStrong,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    color: colors.ink,
     flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 16,
+    minHeight: 48,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.xs,
   },
   newCategoryButton: {
     alignItems: "center",
     backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    height: 44,
+    borderRadius: radius.sm,
+    height: 48,
     justifyContent: "center",
-    width: 44,
+    width: 48,
   },
   newCategoryButtonPressed: {
     opacity: 0.85,
@@ -523,3 +544,4 @@ const styles = StyleSheet.create({
     gap: space.sm,
   },
 });
+}

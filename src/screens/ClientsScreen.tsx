@@ -20,7 +20,7 @@ import {
 import { scheduleDailySummary } from "../data/notifications";
 import { formatDate, formatMoney, normalizePhone } from "../domain/format";
 import { userCan } from "../domain/permissions";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type { Client, ClientInput, User } from "../types";
 
@@ -32,6 +32,7 @@ interface ClientsScreenProps {
 const emptyClient: ClientInput = { name: "", phone: "", address: "" };
 
 export function ClientsScreen({ db, user }: ClientsScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -291,7 +292,8 @@ export function ClientsScreen({ db, user }: ClientsScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -383,3 +385,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+}

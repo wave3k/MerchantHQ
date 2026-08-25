@@ -25,7 +25,7 @@ import {
 import { formatDate, formatMoney } from "../domain/format";
 import { validateAccountPassword } from "../domain/accounts";
 import { roleLabel } from "../domain/permissions";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type {
   Employee,
@@ -63,6 +63,7 @@ export function EmployeesScreen({
   user,
   onNavigate,
 }: EmployeesScreenProps) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const [mode, setMode] = useState<"employees" | "accounts">("employees");
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -634,7 +635,8 @@ export function EmployeesScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   actionButtons: {
     alignItems: "center",
     flexDirection: "row",
@@ -881,3 +883,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 });
+}

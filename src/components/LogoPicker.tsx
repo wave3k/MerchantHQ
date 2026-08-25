@@ -6,7 +6,7 @@ import { AppButton } from "./AppButton";
 import { ModalSheet } from "./ModalSheet";
 import { TranslatedText as Text } from "./TranslatedText";
 import { setSetting } from "../data/database";
-import { colors, fonts, radius, space } from "../theme";
+import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import {
   logoRegistry,
   logoLabels,
@@ -58,6 +58,7 @@ export function LogoPicker({
   initialSecondary,
   onSaved,
 }: LogoPickerProps) {
+  const styles = useThemedStyles(createStyles);
   const [logo, setLogo] = useState<LogoName>(initialLogo);
   const [primary, setPrimary] = useState(initialPrimary);
   const [secondary, setSecondary] = useState(initialSecondary);
@@ -182,7 +183,8 @@ export function LogoPicker({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   categoryTitle: {
     color: colors.muted,
     fontFamily: fonts.bodySemibold,
@@ -240,3 +242,4 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
 });
+}
