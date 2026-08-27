@@ -224,7 +224,7 @@ function assertBackup(value: unknown): asserts value is BackupFile {
     !value ||
     typeof value !== "object" ||
     (value as BackupFile).format !== "commerce-manager-backup" ||
-    ![1, 2, 3, 4, 5, 6, 7, 8].includes((value as BackupFile).version)
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9].includes((value as BackupFile).version)
   ) {
     throw new Error("Ce fichier n’est pas une sauvegarde MerchantHQ valide.");
   }
