@@ -6,6 +6,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import { APP_VERSION, BACKUP_FORMAT_VERSION } from "../appInfo";
 import type { User } from "../types";
 import { withWriteTransaction } from "./transactions";
+import { getCurrentShopId } from "./shopContext";
 
 const TABLES = [
   "shops",
@@ -177,10 +178,17 @@ export async function createBackupPayload(
   exportedBy: string,
 ): Promise<BackupFile> {
   const data = {} as BackupFile["data"];
+  const shopId = getCurrentShopId();
   for (const table of TABLES) {
-    data[table] = await db.getAllAsync<Record<string, unknown>>(
-      `SELECT * FROM ${table}`,
-    );
+    const hasShopColumn = TABLE_COLUMNS[table].includes("shop_id");
+    data[table] = hasShopColumn && shopId
+      ? await db.getAllAsync<Record<string, unknown>>(
+          `SELECT * FROM ${table} WHERE shop_id = ?`,
+          shopId,
+        )
+      : await db.getAllAsync<Record<string, unknown>>(
+          `SELECT * FROM ${table}`,
+        );
   }
   return {
     format: "commerce-manager-backup",
@@ -355,6 +363,90 @@ export async function restoreBackupPayload(
          )
        WHERE employee_name IS NULL OR employee_name = '';
     `);
+  });
+  return parsed;
+}
+
+async function upsertRowKeepingNewest(
+  db: SQLiteDatabase,
+  table: TableName,
+  row: Record<string, unknown>,
+): Promise<void> {
+  const allowed = TABLE_COLUMNS[table];
+  const keys = Object.keys(row).filter((k) => allowed.includes(k));
+  if (keys.length === 0) return;
+  const idValue = row.id;
+  const shopValue = (row.shop_id as string) ?? "";
+  const hasUpdated = allowed.includes("updated_at");
+  const tsColumn = hasUpdated ? "updated_at" : allowed.includes("created_at") ? "created_at" : null;
+  const candidateTs = tsColumn ? (row[tsColumn] as string | undefined) : undefined;
+
+  let existing: Record<string, unknown> | null = null;
+  if (idValue !== undefined) {
+    const args: Array<string | number> = [idValue as string | number];
+    if (allowed.includes("shop_id")) args.push(shopValue);
+    existing = await db.getFirstAsync<Record<string, unknown>>(
+      `SELECT * FROM ${table} WHERE id = ?${allowed.includes("shop_id") ? " AND shop_id = ?" : ""}`,
+      ...args,
+    );
+  }
+
+  if (existing && candidateTs && tsColumn) {
+    const existingTs = existing[tsColumn] as string | undefined;
+    if (existingTs && existingTs >= candidateTs) {
+      return;
+    }
+  }
+
+  const placeholders = keys.map(() => "?").join(", ");
+  const values = keys.map((column) => {
+    const value = row[column];
+    if (
+      value === null ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      value instanceof Uint8Array
+    ) {
+      return value;
+    }
+    return JSON.stringify(value);
+  });
+  if (table === "settings") {
+    const updateCols = keys.filter((k) => k !== "key").map((k) => `${k} = excluded.${k}`).join(", ");
+    await db.runAsync(
+      `INSERT INTO settings (${keys.join(", ")}) VALUES (${placeholders})
+       ON CONFLICT(key) DO UPDATE SET ${updateCols || "value = excluded.value"}`,
+      values,
+    );
+    return;
+  }
+  const updateCols = keys.filter((k) => k !== "id").map((k) => `${k} = excluded.${k}`).join(", ");
+  await db.runAsync(
+    `INSERT INTO ${table} (${keys.join(", ")}) VALUES (${placeholders})
+     ON CONFLICT(id) DO UPDATE SET ${updateCols}`,
+    values,
+  );
+}
+
+export async function restoreBackupForShop(
+  db: SQLiteDatabase,
+  parsed: unknown,
+): Promise<BackupFile> {
+  assertBackup(parsed);
+
+  await withWriteTransaction(db, async (transaction) => {
+    for (const table of TABLES) {
+      const rows = parsed.data[table] ?? [];
+      for (const row of rows) {
+        await upsertRowKeepingNewest(transaction, table, row);
+      }
+    }
+    await transaction.runAsync(
+      `INSERT INTO shops (id, name, logo, is_active, created_at)
+       SELECT 'default', 'Ma boutique', 'merchant-cash', 1, ?
+       WHERE NOT EXISTS (SELECT 1 FROM shops)`,
+      new Date().toISOString(),
+    );
   });
   return parsed;
 }

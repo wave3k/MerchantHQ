@@ -4,6 +4,7 @@ import { APP_VERSION, BACKUP_FORMAT_VERSION } from "../appInfo";
 import {
   createBackupPayload,
   emptyBackupPayload,
+  restoreBackupForShop,
   restoreBackupPayload,
   type BackupFile,
 } from "./backup";
@@ -341,7 +342,7 @@ export async function restoreCloudBackup(
     );
   }
   const payload = await getBackupPayload(update.accountId, getCurrentShopId() ?? "", update.backupId);
-  const restored = await restoreBackupPayload(db, JSON.parse(payload));
+  const restored = await restoreBackupForShop(db, JSON.parse(payload));
   await writeState(db, LAST_RESTORED_BACKUP_ID_KEY, update.backupId);
   await writeState(db, LAST_RESTORED_AT_KEY, update.snapshotAt);
   await writeState(db, PENDING_DATE_KEY, null);
