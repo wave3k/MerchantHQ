@@ -17,6 +17,7 @@ import { QgHubShieldIcon } from "./QgHubShieldIcon";
 import { QgHubStarIcon } from "./QgHubStarIcon";
 import { MerchanthqCombinedIcon } from "./MerchanthqCombinedIcon";
 import { MerchanthqEmblemIcon } from "./MerchanthqEmblemIcon";
+import { MerchantCashIcon } from "./MerchantCashIcon";
 
 export interface LogoProps {
   size?: number;
@@ -46,6 +47,7 @@ export const logoRegistry: Record<LogoName, ComponentType<LogoProps>> = {
   "qg-hub-star": QgHubStarIcon,
   "merchanthq-combined": MerchanthqCombinedIcon,
   "merchanthq-emblem": MerchanthqEmblemIcon,
+  "merchant-cash": MerchantCashIcon,
 };
 
 export const logoLabels: Record<LogoName, string> = {
@@ -67,11 +69,12 @@ export const logoLabels: Record<LogoName, string> = {
   "qg-hub-star": "QG Hub \u00c9toile",
   "merchanthq-combined": "MerchantHQ Combin\u00e9",
   "merchanthq-emblem": "MerchantHQ Embl\u00e8me",
+  "merchant-cash": "Caisse Boutique",
 };
 
 export const logoCategories = [
   { title: "Vente Cash", logos: ["vente-cash", "vente-cash-detail", "vente-cash-minimal", "vente-cash-receipt", "vente-cash-bill", "vente-cash-bronze"] },
   { title: "Stock Logistique", logos: ["stock-logistique", "stock-logistique-detail", "stock-logistique-palette", "stock-logistique-truck", "stock-logistique-barcode"] },
   { title: "QG / Hub", logos: ["qg-hub", "qg-hub-detail", "qg-hub-pin", "qg-hub-shield", "qg-hub-star"] },
-  { title: "MerchantHQ", logos: ["merchanthq-combined", "merchanthq-emblem"] },
+  { title: "MerchantHQ", logos: ["merchanthq-combined", "merchanthq-emblem", "merchant-cash"] },
 ];

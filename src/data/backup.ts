@@ -8,6 +8,7 @@ import type { User } from "../types";
 import { withWriteTransaction } from "./transactions";
 
 const TABLES = [
+  "shops",
   "settings",
   "employees",
   "users",
@@ -27,9 +28,11 @@ const TABLES = [
 type TableName = (typeof TABLES)[number];
 
 const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
+  shops: ["id", "name", "logo", "is_active", "created_at"],
   settings: ["key", "value"],
   employees: [
     "id",
+    "shop_id",
     "name",
     "phone",
     "position",
@@ -39,6 +42,7 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   ],
   users: [
     "id",
+    "shop_id",
     "name",
     "username",
     "role",
@@ -51,6 +55,7 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   ],
   attendance_records: [
     "id",
+    "shop_id",
     "employee_id",
     "work_date",
     "status",
@@ -62,6 +67,7 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   ],
   products: [
     "id",
+    "shop_id",
     "name",
     "sku",
     "category",
@@ -73,9 +79,10 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
     "created_at",
     "updated_at",
   ],
-  clients: ["id", "name", "phone", "address", "created_at", "updated_at"],
+  clients: ["id", "shop_id", "name", "phone", "address", "created_at", "updated_at"],
   appointments: [
     "id",
+    "shop_id",
     "client_id",
     "product_id",
     "scheduled_at",
@@ -89,6 +96,7 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   ],
   orders: [
     "id",
+    "shop_id",
     "order_number",
     "client_id",
     "user_id",
@@ -101,6 +109,7 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   ],
   order_items: [
     "id",
+    "shop_id",
     "order_id",
     "product_id",
     "product_name",
@@ -110,6 +119,7 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   ],
   stock_movements: [
     "id",
+    "shop_id",
     "product_id",
     "user_id",
     "type",
@@ -119,11 +129,12 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
     "reason",
     "created_at",
   ],
-  categories: ["id", "name", "created_at"],
-  expense_categories: ["id", "name", "is_predefined", "created_at"],
-  expenses: ["id", "category_id", "amount", "notes", "created_by", "created_by_name", "created_at"],
+  categories: ["id", "shop_id", "name", "created_at"],
+  expense_categories: ["id", "shop_id", "name", "is_predefined", "created_at"],
+  expenses: ["id", "shop_id", "category_id", "amount", "notes", "created_by", "created_by_name", "created_at"],
   activity_logs: [
     "id",
+    "shop_id",
     "user_id",
     "user_name",
     "user_role",
@@ -139,7 +150,7 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
 
 export interface BackupFile {
   format: "commerce-manager-backup";
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
   appVersion?: string;
   exportedAt: string;
   exportedBy: string;

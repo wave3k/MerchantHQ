@@ -1,4 +1,4 @@
-import type { SQLiteDatabase } from "expo-sqlite";
+﻿import type { SQLiteDatabase } from "expo-sqlite";
 
 import type {
   ActivityLog,
@@ -29,9 +29,25 @@ import type {
 import { validateAccountPassword } from "../domain/accounts";
 import { createPasswordHash, verifyPassword } from "./security";
 import { withWriteTransaction } from "./transactions";
+import { getCurrentShopId, getCurrentShopIdOrThrow } from "./shopContext";
 
 const now = () => new Date().toISOString();
-const CURRENT_SCHEMA_VERSION = 10;
+const CURRENT_SCHEMA_VERSION = 11;
+
+function generateId(): string {
+  const bytes = new Uint8Array(16);
+  const cryptoObj = globalThis.crypto;
+  if (cryptoObj?.getRandomValues) cryptoObj.getRandomValues(bytes);
+  else {
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] ?? 0) & 0x0f | 0x40;
+  bytes[8] = (bytes[8] ?? 0) & 0x3f | 0x80;
+  const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 export interface OwnerAccountRecord {
   name: string;
@@ -46,6 +62,14 @@ CREATE TABLE IF NOT EXISTS schema_meta (
   version INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS shops (
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL,
+  logo TEXT NOT NULL DEFAULT 'store',
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY NOT NULL,
   value TEXT NOT NULL
@@ -53,9 +77,10 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE TABLE IF NOT EXISTS employees (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
   phone TEXT NOT NULL DEFAULT '',
-  position TEXT NOT NULL DEFAULT 'Employé',
+  position TEXT NOT NULL DEFAULT 'EmployÃ©',
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -63,6 +88,7 @@ CREATE TABLE IF NOT EXISTS employees (
 
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
   username TEXT NOT NULL COLLATE NOCASE UNIQUE,
   role TEXT NOT NULL CHECK(role IN ('boss', 'manager', 'cashier', 'employee')),
@@ -77,6 +103,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS attendance_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
   work_date TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('present', 'absent_justified', 'absent_unjustified')),
@@ -90,9 +117,10 @@ CREATE TABLE IF NOT EXISTS attendance_records (
 
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
   sku TEXT COLLATE NOCASE UNIQUE,
-  category TEXT NOT NULL DEFAULT 'Général',
+  category TEXT NOT NULL DEFAULT 'GÃ©nÃ©ral',
   price INTEGER NOT NULL CHECK(price >= 0),
   stock INTEGER NOT NULL DEFAULT 0 CHECK(stock >= 0),
   low_stock_threshold INTEGER NOT NULL DEFAULT 5 CHECK(low_stock_threshold >= 0),
@@ -104,12 +132,14 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL COLLATE NOCASE UNIQUE,
   created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS expense_categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL COLLATE NOCASE UNIQUE,
   is_predefined INTEGER NOT NULL DEFAULT 0 CHECK(is_predefined IN (0, 1)),
   created_at TEXT NOT NULL
@@ -117,6 +147,7 @@ CREATE TABLE IF NOT EXISTS expense_categories (
 
 CREATE TABLE IF NOT EXISTS expenses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   category_id INTEGER REFERENCES expense_categories(id) ON DELETE SET NULL,
   amount INTEGER NOT NULL CHECK(amount > 0),
   notes TEXT NOT NULL DEFAULT '',
@@ -127,6 +158,7 @@ CREATE TABLE IF NOT EXISTS expenses (
 
 CREATE TABLE IF NOT EXISTS clients (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
   phone TEXT NOT NULL COLLATE NOCASE UNIQUE,
   address TEXT,
@@ -136,6 +168,7 @@ CREATE TABLE IF NOT EXISTS clients (
 
 CREATE TABLE IF NOT EXISTS appointments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
   product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
   scheduled_at TEXT NOT NULL,
@@ -150,6 +183,7 @@ CREATE TABLE IF NOT EXISTS appointments (
 
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   order_number TEXT NOT NULL UNIQUE,
   client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -163,6 +197,7 @@ CREATE TABLE IF NOT EXISTS orders (
 
 CREATE TABLE IF NOT EXISTS order_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
   product_name TEXT NOT NULL,
@@ -173,6 +208,7 @@ CREATE TABLE IF NOT EXISTS order_items (
 
 CREATE TABLE IF NOT EXISTS stock_movements (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   product_id INTEGER NOT NULL REFERENCES products(id),
   user_id INTEGER NOT NULL REFERENCES users(id),
   type TEXT NOT NULL CHECK(type IN ('sale', 'adjustment', 'restock')),
@@ -185,6 +221,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 
 CREATE TABLE IF NOT EXISTS activity_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
   user_id INTEGER REFERENCES users(id),
   user_name TEXT NOT NULL,
   user_role TEXT NOT NULL,
@@ -207,6 +244,7 @@ CREATE INDEX IF NOT EXISTS idx_attendance_work_date ON attendance_records(work_d
 CREATE INDEX IF NOT EXISTS idx_attendance_employee_id ON attendance_records(employee_id);
 CREATE INDEX IF NOT EXISTS idx_appointments_scheduled_at ON appointments(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_appointments_client_id ON appointments(client_id);
+CREATE INDEX IF NOT EXISTS idx_shops_active ON shops(is_active);
 `;
 
 async function tableColumns(
@@ -250,10 +288,10 @@ async function migrateToVersion2(db: SQLiteDatabase): Promise<void> {
   for (const account of usersWithoutEmployee) {
     const position =
       account.role === "boss"
-        ? "Propriétaire"
+        ? "PropriÃ©taire"
         : account.role === "manager"
-          ? "Gérant"
-          : "Employé";
+          ? "GÃ©rant"
+          : "EmployÃ©";
     const result = await db.runAsync(
       `INSERT INTO employees
         (name, phone, position, is_active, created_at, updated_at)
@@ -399,7 +437,7 @@ async function migrateToVersion9(db: SQLiteDatabase): Promise<void> {
         name TEXT NOT NULL COLLATE NOCASE UNIQUE,
         created_at TEXT NOT NULL
       );
-      INSERT OR IGNORE INTO categories (name, created_at) VALUES ('Général', '${timestamp}');
+      INSERT OR IGNORE INTO categories (name, created_at) VALUES ('GÃ©nÃ©ral', '${timestamp}');
       INSERT OR IGNORE INTO categories (name, created_at)
         SELECT DISTINCT category, '${timestamp}'
         FROM products
@@ -435,11 +473,80 @@ async function migrateToVersion10(db: SQLiteDatabase): Promise<void> {
         ('Salaires', 1, '${timestamp}'),
         ('Fournitures', 1, '${timestamp}'),
         ('Transport', 1, '${timestamp}'),
-        ('Énergie', 1, '${timestamp}'),
-        ('Publicité', 1, '${timestamp}'),
+        ('Ã‰nergie', 1, '${timestamp}'),
+        ('PublicitÃ©', 1, '${timestamp}'),
         ('Autre', 1, '${timestamp}');
     `);
   });
+}
+
+const SHOP_TABLES = [
+  "employees",
+  "users",
+  "attendance_records",
+  "products",
+  "categories",
+  "expense_categories",
+  "expenses",
+  "clients",
+  "appointments",
+  "orders",
+  "order_items",
+  "stock_movements",
+  "activity_logs",
+] as const;
+
+async function migrateToVersion11(db: SQLiteDatabase): Promise<void> {
+  const timestamp = now();
+  await withWriteTransaction(db, async (transaction) => {
+    await transaction.execAsync(`
+      CREATE TABLE IF NOT EXISTS shops (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        logo TEXT NOT NULL DEFAULT 'store',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+      );
+    `);
+    for (const table of SHOP_TABLES) {
+      const columns = await tableColumns(transaction, table);
+      if (!columns.has("shop_id")) {
+        await transaction.execAsync(
+          `ALTER TABLE ${table} ADD COLUMN shop_id TEXT NOT NULL DEFAULT '';`,
+        );
+      }
+    }
+    const shopRow = await transaction.getFirstAsync<{ id: string; name: string }>(
+      "SELECT id, name FROM shops WHERE is_active = 1 ORDER BY created_at LIMIT 1",
+    );
+    const settingsName = await transaction.getFirstAsync<{ value: string }>(
+      "SELECT value FROM settings WHERE key = 'shop_name'",
+    );
+    let defaultShopId = shopRow?.id;
+    if (!defaultShopId) {
+      defaultShopId = generateId();
+      const shopName = settingsName?.value || "Ma boutique";
+      await transaction.runAsync(
+        "INSERT INTO shops (id, name, logo, is_active, created_at) VALUES (?, ?, 'store', 1, ?)",
+        defaultShopId,
+        shopName,
+        timestamp,
+      );
+    }
+    for (const table of SHOP_TABLES) {
+      await transaction.runAsync(
+        `UPDATE ${table} SET shop_id = ? WHERE shop_id = ''`,
+        defaultShopId,
+      );
+    }
+  });
+}
+
+async function ensureShopsTable(db: SQLiteDatabase): Promise<void> {
+  const shopsColumns = await tableColumns(db, "shops");
+  if (shopsColumns.size === 0) {
+    await migrateToVersion11(db);
+  }
 }
 
 export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
@@ -454,7 +561,7 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
     ["language", "fr"],
     ["theme", "cobalt"],
     ["tax_rate", "0"],
-    ["opening_hours", "08:00 – 18:00"],
+    ["opening_hours", "08:00 â€“ 18:00"],
     ["shop_address", ""],
     ["shop_phone", ""],
     ["shop_email", ""],
@@ -468,7 +575,7 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
     ["ticket_footer", "Merci pour votre visite."],
     ["ticket_show_address", "1"],
     ["ticket_show_phone", "1"],
-    ["app_logo", "vente-cash"],
+    ["app_logo", "merchant-cash"],
     ["logo_primary", "#1D55C5"],
     ["logo_secondary", "#E8EFFC"],
   ];
@@ -525,6 +632,13 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   ) {
     await migrateToVersion10(db);
   }
+  const shopTableExists = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'shops'",
+  );
+  const needsShopMigration = (shopTableExists?.count ?? 0) === 0;
+  if (needsShopMigration || (meta && meta.version < 11)) {
+    await migrateToVersion11(db);
+  }
 
   if (!meta) {
     await db.runAsync(
@@ -560,12 +674,14 @@ async function writeLog(
     newValue?: unknown;
   },
 ): Promise<void> {
+  const shopId = getCurrentShopId() ?? "";
   await db.runAsync(
     `INSERT INTO activity_logs
-      (user_id, user_name, user_role, action, entity_type, entity_id, description, old_value, new_value, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (shop_id, user_id, user_name, user_role, action, entity_type, entity_id, description, old_value, new_value, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    shopId,
     actor?.id ?? null,
-    actor?.name ?? "Système",
+    actor?.name ?? "SystÃ¨me",
     actor?.role ?? "system",
     values.action,
     values.entityType,
@@ -584,6 +700,89 @@ export async function hasUsers(db: SQLiteDatabase): Promise<boolean> {
   return (row?.count ?? 0) > 0;
 }
 
+async function resolveShopId(db: SQLiteDatabase): Promise<string> {
+  const current = getCurrentShopId();
+  if (current) return current;
+  await ensureShopsTable(db);
+  const row = await db.getFirstAsync<{ id: string }>(
+    "SELECT id FROM shops WHERE is_active = 1 ORDER BY created_at LIMIT 1",
+  );
+  if (row?.id) return row.id;
+  const id = generateId();
+  await db.runAsync(
+    "INSERT INTO shops (id, name, logo, is_active, created_at) VALUES (?, 'Ma boutique', 'store', 1, ?)",
+    id,
+    now(),
+  );
+  return id;
+}
+
+export async function listShops(db: SQLiteDatabase): Promise<import("../types").Shop[]> {
+  await ensureShopsTable(db);
+  return db.getAllAsync<import("../types").Shop>(
+    "SELECT id, name, logo, is_active, created_at FROM shops WHERE is_active = 1 ORDER BY created_at",
+  );
+}
+
+export async function getShopById(
+  db: SQLiteDatabase,
+  shopId: string,
+): Promise<import("../types").Shop | null> {
+  await ensureShopsTable(db);
+  return db.getFirstAsync<import("../types").Shop>(
+    "SELECT id, name, logo, is_active, created_at FROM shops WHERE id = ?",
+    shopId,
+  );
+}
+
+export async function createShop(
+  db: SQLiteDatabase,
+  name: string,
+  logo = "store",
+): Promise<import("../types").Shop> {
+  await ensureShopsTable(db);
+  const id = generateId();
+  const trimmed = name.trim() || "Nouvelle boutique";
+  await db.runAsync(
+    "INSERT INTO shops (id, name, logo, is_active, created_at) VALUES (?, ?, ?, 1, ?)",
+    id,
+    trimmed,
+    logo,
+    now(),
+  );
+  return { id, name: trimmed, logo, is_active: 1, created_at: now() };
+}
+
+export async function updateShop(
+  db: SQLiteDatabase,
+  shopId: string,
+  values: { name?: string; logo?: string; is_active?: number },
+): Promise<void> {
+  await ensureShopsTable(db);
+  const sets: string[] = [];
+  const args: Array<string | number> = [];
+  if (values.name !== undefined) {
+    sets.push("name = ?");
+    args.push(values.name.trim() || "Ma boutique");
+  }
+  if (values.logo !== undefined) {
+    sets.push("logo = ?");
+    args.push(values.logo);
+  }
+  if (values.is_active !== undefined) {
+    sets.push("is_active = ?");
+    args.push(values.is_active);
+  }
+  if (sets.length === 0) return;
+  args.push(shopId);
+  await db.runAsync(`UPDATE shops SET ${sets.join(", ")} WHERE id = ?`, ...args);
+}
+
+export async function deleteShop(db: SQLiteDatabase, shopId: string): Promise<void> {
+  await ensureShopsTable(db);
+  await updateShop(db, shopId, { is_active: 0 });
+}
+
 export async function createBoss(
   db: SQLiteDatabase,
   name: string,
@@ -591,24 +790,27 @@ export async function createBoss(
   password: string,
 ): Promise<User> {
   if ((await hasUsers(db))) {
-    throw new Error("Le compte Propriétaire existe déjà.");
+    throw new Error("Le compte PropriÃ©taire existe dÃ©jÃ .");
   }
   const credentials = await createPasswordHash(password);
   const timestamp = now();
+  const shopId = await resolveShopId(db);
   let user: User | null = null;
   await withWriteTransaction(db, async (transaction) => {
     const employeeResult = await transaction.runAsync(
       `INSERT INTO employees
-        (name, phone, position, is_active, created_at, updated_at)
-       VALUES (?, '', 'Propriétaire', 1, ?, ?)`,
+        (shop_id, name, phone, position, is_active, created_at, updated_at)
+       VALUES (?, ?, '', 'PropriÃ©taire', 1, ?, ?)`,
+      shopId,
       name.trim(),
       timestamp,
       timestamp,
     );
     const result = await transaction.runAsync(
       `INSERT INTO users
-        (name, username, role, employee_id, password_hash, password_salt, is_active, created_at, updated_at)
-       VALUES (?, ?, 'boss', ?, ?, ?, 1, ?, ?)`,
+        (shop_id, name, username, role, employee_id, password_hash, password_salt, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, 'boss', ?, ?, ?, 1, ?, ?)`,
+      shopId,
       name.trim(),
       username.trim(),
       employeeResult.lastInsertRowId,
@@ -629,12 +831,12 @@ export async function createBoss(
         action: "create",
         entityType: "user",
         entityId: user.id,
-        description: `${user.name} a créé le compte Propriétaire initial.`,
+        description: `${user.name} a crÃ©Ã© le compte PropriÃ©taire initial.`,
         newValue: { name: user.name, username: user.username, role: user.role },
       });
     }
   });
-  if (!user) throw new Error("Impossible de créer le compte Propriétaire.");
+  if (!user) throw new Error("Impossible de crÃ©er le compte PropriÃ©taire.");
   await db.runAsync(
     `INSERT INTO settings (key, value) VALUES ('owner_account_pending', '1')
      ON CONFLICT(key) DO UPDATE SET value = '1'`,
@@ -648,7 +850,7 @@ export async function listUsers(
 ): Promise<User[]> {
   return db.getAllAsync<User>(
     `SELECT u.id, COALESCE(e.name, u.name) AS name, u.username, u.role,
-      u.employee_id, u.permissions,
+      u.employee_id, u.permissions, u.shop_id,
       CASE WHEN u.password_hash = '' THEN 0 ELSE 1 END AS has_password,
       u.is_active, u.created_at
      FROM users u
@@ -668,7 +870,7 @@ export async function login(
     User & { password_hash: string; password_salt: string }
   >(
     `SELECT u.id, COALESCE(e.name, u.name) AS name, u.username, u.role,
-      u.employee_id, u.permissions,
+      u.employee_id, u.permissions, u.shop_id,
       CASE WHEN u.password_hash = '' THEN 0 ELSE 1 END AS has_password,
       u.is_active, u.created_at, u.password_hash, u.password_salt
      FROM users u
@@ -699,7 +901,7 @@ export async function login(
   await writeLog(db, user, {
     action: "login",
     entityType: "session",
-    description: `${user.name} s’est connecté à l’application.`,
+    description: `${user.name} sâ€™est connectÃ© Ã  lâ€™application.`,
   });
   return user;
 }
@@ -749,7 +951,7 @@ export async function applyRemoteOwnerAccount(
       const employee = await transaction.runAsync(
         `INSERT INTO employees
           (name, phone, position, is_active, created_at, updated_at)
-         VALUES (?, '', 'Propriétaire', 1, ?, ?)`,
+         VALUES (?, '', 'PropriÃ©taire', 1, ?, ?)`,
         account.name,
         timestamp,
         timestamp,
@@ -819,7 +1021,7 @@ export async function changeBossPassword(
   nextPassword: string,
 ): Promise<void> {
   if (nextPassword.length < 4) {
-    throw new Error("Le nouveau mot de passe doit contenir au moins 4 caractères.");
+    throw new Error("Le nouveau mot de passe doit contenir au moins 4 caractÃ¨res.");
   }
   if (!(await verifyBossPassword(db, currentPassword))) {
     throw new Error("Le mot de passe actuel est incorrect.");
@@ -830,7 +1032,7 @@ export async function changeBossPassword(
       is_active, created_at
      FROM users WHERE role = 'boss' AND is_active = 1 LIMIT 1`,
   );
-  if (!boss) throw new Error("Compte propriétaire introuvable.");
+  if (!boss) throw new Error("Compte propriÃ©taire introuvable.");
   const credentials = await createPasswordHash(nextPassword);
   await db.runAsync(
     "UPDATE users SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?",
@@ -847,7 +1049,7 @@ export async function changeBossPassword(
     action: "password_change",
     entityType: "user",
     entityId: boss.id,
-    description: "Le mot de passe du compte propriétaire a été modifié.",
+    description: "Le mot de passe du compte propriÃ©taire a Ã©tÃ© modifiÃ©.",
   });
 }
 
@@ -856,7 +1058,7 @@ export async function resetBossPassword(
   nextPassword: string,
 ): Promise<void> {
   if (nextPassword.length < 4) {
-    throw new Error("Le nouveau mot de passe doit contenir au moins 4 caractères.");
+    throw new Error("Le nouveau mot de passe doit contenir au moins 4 caractÃ¨res.");
   }
   const boss = await db.getFirstAsync<User>(
     `SELECT id, name, username, role, employee_id, permissions,
@@ -864,7 +1066,7 @@ export async function resetBossPassword(
       is_active, created_at
      FROM users WHERE role = 'boss' AND is_active = 1 LIMIT 1`,
   );
-  if (!boss) throw new Error("Compte propriétaire introuvable.");
+  if (!boss) throw new Error("Compte propriÃ©taire introuvable.");
   const credentials = await createPasswordHash(nextPassword);
   await db.runAsync(
     "UPDATE users SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?",
@@ -881,7 +1083,7 @@ export async function resetBossPassword(
     action: "password_reset",
     entityType: "user",
     entityId: boss.id,
-    description: "Le mot de passe du compte propriétaire a été réinitialisé via l'accès développeur.",
+    description: "Le mot de passe du compte propriÃ©taire a Ã©tÃ© rÃ©initialisÃ© via l'accÃ¨s dÃ©veloppeur.",
   });
 }
 
@@ -895,8 +1097,8 @@ export async function recordLogout(
     entityType: "session",
     description:
       reason === "inactivity"
-        ? `${user.name} a été déconnecté après une période d’inactivité.`
-        : `${user.name} a verrouillé sa session.`,
+        ? `${user.name} a Ã©tÃ© dÃ©connectÃ© aprÃ¨s une pÃ©riode dâ€™inactivitÃ©.`
+        : `${user.name} a verrouillÃ© sa session.`,
   });
 }
 
@@ -912,16 +1114,18 @@ export async function createUser(
     input.employeeId,
   );
   if (!employee) {
-    throw new Error("Cet employé est introuvable ou possède déjà un compte.");
+    throw new Error("Cet employÃ© est introuvable ou possÃ¨de dÃ©jÃ  un compte.");
   }
   const passwordError = validateAccountPassword(input.role, input.password);
   if (passwordError) throw new Error(passwordError);
   const credentials = await createPasswordHash(input.password);
+  const shopId = employee.shop_id ?? (await resolveShopId(db));
   const timestamp = now();
   const result = await db.runAsync(
     `INSERT INTO users
-      (name, username, role, employee_id, password_hash, password_salt, permissions, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      (shop_id, name, username, role, employee_id, password_hash, password_salt, permissions, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    shopId,
     employee.name,
     input.username.trim(),
     input.role,
@@ -936,7 +1140,7 @@ export async function createUser(
     action: "create",
     entityType: "user",
     entityId: result.lastInsertRowId,
-    description: `${actor.name} a créé le compte ${input.role === "manager" ? "gérant" : "employé"} de ${employee.name}.`,
+    description: `${actor.name} a crÃ©Ã© le compte ${input.role === "manager" ? "gÃ©rant" : "employÃ©"} de ${employee.name}.`,
     newValue: {
       name: employee.name,
       employeeId: employee.id,
@@ -957,9 +1161,9 @@ export async function updateUserPermissions(
     "SELECT name, role FROM users WHERE id = ?",
     userId,
   );
-  if (!target) throw new Error("Ce compte n’existe plus.");
+  if (!target) throw new Error("Ce compte nâ€™existe plus.");
   if (target.role === "boss") {
-    throw new Error("Les permissions du compte Propriétaire ne peuvent pas être modifiées.");
+    throw new Error("Les permissions du compte PropriÃ©taire ne peuvent pas Ãªtre modifiÃ©es.");
   }
   await db.runAsync(
     "UPDATE users SET permissions = ?, updated_at = ? WHERE id = ?",
@@ -971,7 +1175,7 @@ export async function updateUserPermissions(
     action: "update",
     entityType: "user",
     entityId: userId,
-    description: `${actor.name} a modifié les permissions de ${target.name}.`,
+    description: `${actor.name} a modifiÃ© les permissions de ${target.name}.`,
     oldValue: { permissions },
     newValue: { permissions },
   });
@@ -982,7 +1186,7 @@ export async function deactivateUser(
   user: User,
   actor: User,
 ): Promise<void> {
-  if (user.role === "boss") throw new Error("Le compte Propriétaire ne peut pas être supprimé.");
+  if (user.role === "boss") throw new Error("Le compte PropriÃ©taire ne peut pas Ãªtre supprimÃ©.");
   await db.runAsync(
     "UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?",
     now(),
@@ -992,7 +1196,7 @@ export async function deactivateUser(
     action: "deactivate",
     entityType: "user",
     entityId: user.id,
-    description: `${actor.name} a désactivé le compte de ${user.name}.`,
+    description: `${actor.name} a dÃ©sactivÃ© le compte de ${user.name}.`,
     oldValue: { is_active: 1 },
     newValue: { is_active: 0 },
   });
@@ -1002,6 +1206,7 @@ export async function listEmployees(
   db: SQLiteDatabase,
   includeInactive = false,
 ): Promise<Employee[]> {
+  const shopId = await resolveShopId(db);
   return db.getAllAsync<Employee>(
     `SELECT e.*,
       COUNT(o.id) AS order_count,
@@ -1010,11 +1215,13 @@ export async function listEmployees(
       u.role AS account_role,
       u.is_active AS account_active
      FROM employees e
-     LEFT JOIN orders o ON o.employee_id = e.id
+     LEFT JOIN orders o ON o.employee_id = e.id AND o.shop_id = ?
      LEFT JOIN users u ON u.employee_id = e.id
-     ${includeInactive ? "" : "WHERE e.is_active = 1"}
+     WHERE e.shop_id = ? ${includeInactive ? "" : "AND e.is_active = 1"}
      GROUP BY e.id
      ORDER BY e.is_active DESC, e.name`,
+    shopId,
+    shopId,
   );
 }
 
@@ -1025,34 +1232,38 @@ export async function saveEmployee(
   employeeId?: number,
 ): Promise<number> {
   const timestamp = now();
+  const shopId = await resolveShopId(db);
   if (employeeId) {
     const previous = await db.getFirstAsync<Employee>(
-      "SELECT * FROM employees WHERE id = ?",
+      "SELECT * FROM employees WHERE id = ? AND shop_id = ?",
       employeeId,
+      shopId,
     );
-    if (!previous) throw new Error("Employé introuvable.");
+    if (!previous) throw new Error("EmployÃ© introuvable.");
     await withWriteTransaction(db, async (transaction) => {
       await transaction.runAsync(
         `UPDATE employees
          SET name = ?, phone = ?, position = ?, updated_at = ?
-         WHERE id = ?`,
+         WHERE id = ? AND shop_id = ?`,
         input.name.trim(),
         input.phone?.trim() ?? "",
-        input.position.trim() || "Employé",
+        input.position.trim() || "EmployÃ©",
         timestamp,
         employeeId,
+        shopId,
       );
       await transaction.runAsync(
-        "UPDATE users SET name = ?, updated_at = ? WHERE employee_id = ?",
+        "UPDATE users SET name = ?, updated_at = ? WHERE employee_id = ? AND shop_id = ?",
         input.name.trim(),
         timestamp,
         employeeId,
+        shopId,
       );
       await writeLog(transaction, actor, {
         action: "update",
         entityType: "employee",
         entityId: employeeId,
-        description: `${actor.name} a modifié la fiche de ${input.name.trim()}.`,
+        description: `${actor.name} a modifiÃ© la fiche de ${input.name.trim()}.`,
         oldValue: previous,
         newValue: input,
       });
@@ -1062,11 +1273,12 @@ export async function saveEmployee(
 
   const result = await db.runAsync(
     `INSERT INTO employees
-      (name, phone, position, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, 1, ?, ?)`,
+      (shop_id, name, phone, position, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 1, ?, ?)`,
+    shopId,
     input.name.trim(),
     input.phone?.trim() ?? "",
-    input.position.trim() || "Employé",
+    input.position.trim() || "EmployÃ©",
     timestamp,
     timestamp,
   );
@@ -1074,7 +1286,7 @@ export async function saveEmployee(
     action: "create",
     entityType: "employee",
     entityId: result.lastInsertRowId,
-    description: `${actor.name} a ajouté ${input.name.trim()} au personnel.`,
+    description: `${actor.name} a ajoutÃ© ${input.name.trim()} au personnel.`,
     newValue: input,
   });
   return result.lastInsertRowId;
@@ -1090,7 +1302,7 @@ export async function deactivateEmployee(
     employee.id,
   );
   if (linkedBoss) {
-    throw new Error("La fiche du propriétaire ne peut pas être désactivée.");
+    throw new Error("La fiche du propriÃ©taire ne peut pas Ãªtre dÃ©sactivÃ©e.");
   }
   await withWriteTransaction(db, async (transaction) => {
     await transaction.runAsync(
@@ -1107,7 +1319,7 @@ export async function deactivateEmployee(
       action: "deactivate",
       entityType: "employee",
       entityId: employee.id,
-      description: `${actor.name} a désactivé la fiche de ${employee.name}.`,
+      description: `${actor.name} a dÃ©sactivÃ© la fiche de ${employee.name}.`,
       oldValue: { is_active: 1 },
       newValue: { is_active: 0 },
     });
@@ -1118,6 +1330,7 @@ export async function listAttendanceForDate(
   db: SQLiteDatabase,
   workDate: string,
 ): Promise<AttendanceRecord[]> {
+  const shopId = await resolveShopId(db);
   return db.getAllAsync<AttendanceRecord>(
     `SELECT
        a.id,
@@ -1136,10 +1349,11 @@ export async function listAttendanceForDate(
      LEFT JOIN attendance_records a
        ON a.employee_id = e.id AND a.work_date = ?
      LEFT JOIN users u ON u.id = a.recorded_by
-     WHERE e.is_active = 1
+     WHERE e.shop_id = ? AND e.is_active = 1
      ORDER BY e.name`,
     workDate,
     workDate,
+    shopId,
   );
 }
 
@@ -1149,40 +1363,43 @@ export async function saveAttendance(
   actor: User,
 ): Promise<void> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.workDate)) {
-    throw new Error("La date de présence est invalide.");
+    throw new Error("La date de prÃ©sence est invalide.");
   }
   const employee = await db.getFirstAsync<Employee>(
     "SELECT * FROM employees WHERE id = ? AND is_active = 1",
     input.employeeId,
   );
-  if (!employee) throw new Error("Employé introuvable.");
+  if (!employee) throw new Error("EmployÃ© introuvable.");
+  const shopId = employee.shop_id ?? (await resolveShopId(db));
   const previous = await db.getFirstAsync<AttendanceRecord>(
-    "SELECT * FROM attendance_records WHERE employee_id = ? AND work_date = ?",
+    "SELECT * FROM attendance_records WHERE employee_id = ? AND work_date = ? AND shop_id = ?",
     input.employeeId,
     input.workDate,
+    shopId,
   );
   const timestamp = now();
   const arrivalAt = input.status === "present" ? input.arrivalAt : null;
   if (input.status === "present" && !arrivalAt) {
-    throw new Error("Indiquez l’heure d’arrivée.");
+    throw new Error("Indiquez lâ€™heure dâ€™arrivÃ©e.");
   }
   if (
     input.status === "absent_justified" &&
     (input.note?.trim().length ?? 0) < 2
   ) {
-    throw new Error("Indiquez la raison de l’absence justifiée.");
+    throw new Error("Indiquez la raison de lâ€™absence justifiÃ©e.");
   }
   await withWriteTransaction(db, async (transaction) => {
     await transaction.runAsync(
       `INSERT INTO attendance_records
-        (employee_id, work_date, status, arrival_at, note, recorded_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (shop_id, employee_id, work_date, status, arrival_at, note, recorded_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(employee_id, work_date) DO UPDATE SET
          status = excluded.status,
          arrival_at = excluded.arrival_at,
          note = excluded.note,
          recorded_by = excluded.recorded_by,
          updated_at = excluded.updated_at`,
+      shopId,
       input.employeeId,
       input.workDate,
       input.status,
@@ -1193,13 +1410,14 @@ export async function saveAttendance(
       timestamp,
     );
     const current = await transaction.getFirstAsync<AttendanceRecord>(
-      "SELECT * FROM attendance_records WHERE employee_id = ? AND work_date = ?",
+      "SELECT * FROM attendance_records WHERE employee_id = ? AND work_date = ? AND shop_id = ?",
       input.employeeId,
       input.workDate,
+      shopId,
     );
     const statusDescription =
       input.status === "present"
-        ? "présent"
+        ? "prÃ©sent"
         : input.status === "absent_justified"
           ? "absent avec justification"
           : "absent sans justification";
@@ -1207,7 +1425,7 @@ export async function saveAttendance(
       action: previous ? "update" : "create",
       entityType: "attendance",
       entityId: current?.id ?? null,
-      description: `${actor.name} a marqué ${employee.name} ${statusDescription} le ${input.workDate}.`,
+      description: `${actor.name} a marquÃ© ${employee.name} ${statusDescription} le ${input.workDate}.`,
       oldValue: previous ?? undefined,
       newValue: current ?? input,
     });
@@ -1218,24 +1436,30 @@ async function ensureCategory(
   db: SQLiteDatabase,
   name: string,
   timestamp: string,
+  shopId?: string,
 ): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) return;
+  const resolvedShop = shopId ?? (await resolveShopId(db));
   await db.runAsync(
-    "INSERT OR IGNORE INTO categories (name, created_at) VALUES (?, ?)",
+    "INSERT OR IGNORE INTO categories (shop_id, name, created_at) VALUES (?, ?, ?)",
+    resolvedShop,
     trimmed,
     timestamp,
   );
 }
 
 export async function listCategories(db: SQLiteDatabase): Promise<string[]> {
+  const shopId = await resolveShopId(db);
   const rows = await db.getAllAsync<{ name: string }>(
     `SELECT name FROM (
-       SELECT name FROM categories
+       SELECT name FROM categories WHERE shop_id = ?
        UNION
-       SELECT DISTINCT category AS name FROM products WHERE category <> ''
+       SELECT DISTINCT category AS name FROM products WHERE category <> '' AND shop_id = ?
      )
-     ORDER BY CASE WHEN name = 'Général' THEN 0 ELSE 1 END, name COLLATE NOCASE`,
+     ORDER BY CASE WHEN name = 'GÃ©nÃ©ral' THEN 0 ELSE 1 END, name COLLATE NOCASE`,
+    shopId,
+    shopId,
   );
   return rows.map((row) => row.name);
 }
@@ -1248,7 +1472,7 @@ export async function createCategory(
   const trimmed = name.trim();
   if (trimmed.length < 2) {
     throw new Error(
-      "Le nom de la catégorie doit contenir au moins 2 caractères.",
+      "Le nom de la catÃ©gorie doit contenir au moins 2 caractÃ¨res.",
     );
   }
   const timestamp = now();
@@ -1256,7 +1480,7 @@ export async function createCategory(
   await writeLog(db, actor, {
     action: "create",
     entityType: "category",
-    description: `${actor.name} a créé la catégorie ${trimmed}.`,
+    description: `${actor.name} a crÃ©Ã© la catÃ©gorie ${trimmed}.`,
     newValue: { name: trimmed },
   });
 }
@@ -1264,9 +1488,11 @@ export async function createCategory(
 export async function listExpenseCategories(
   db: SQLiteDatabase,
 ): Promise<ExpenseCategory[]> {
+  const shopId = await resolveShopId(db);
   return db.getAllAsync<ExpenseCategory>(
-    `SELECT * FROM expense_categories
+    `SELECT * FROM expense_categories WHERE shop_id = ?
      ORDER BY is_predefined DESC, name COLLATE NOCASE`,
+    shopId,
   );
 }
 
@@ -1278,30 +1504,35 @@ export async function createExpenseCategory(
   const trimmed = name.trim();
   if (trimmed.length < 2) {
     throw new Error(
-      "Le nom de la catégorie doit contenir au moins 2 caractères.",
+      "Le nom de la catÃ©gorie doit contenir au moins 2 caractÃ¨res.",
     );
   }
+  const shopId = await resolveShopId(db);
   const timestamp = now();
   await db.runAsync(
-    "INSERT OR IGNORE INTO expense_categories (name, is_predefined, created_at) VALUES (?, 0, ?)",
+    "INSERT OR IGNORE INTO expense_categories (shop_id, name, is_predefined, created_at) VALUES (?, ?, 0, ?)",
+    shopId,
     trimmed,
     timestamp,
   );
   await writeLog(db, actor, {
     action: "create",
     entityType: "expense_category",
-    description: `${actor.name} a créé la catégorie de dépense ${trimmed}.`,
+    description: `${actor.name} a crÃ©Ã© la catÃ©gorie de dÃ©pense ${trimmed}.`,
     newValue: { name: trimmed },
   });
 }
 
 export async function listExpenses(db: SQLiteDatabase): Promise<Expense[]> {
+  const shopId = await resolveShopId(db);
   return db.getAllAsync<Expense>(
     `SELECT e.id, e.category_id, COALESCE(c.name, 'Autre') AS category_name,
             e.amount, e.notes, e.created_by, e.created_by_name, e.created_at
      FROM expenses e
      LEFT JOIN expense_categories c ON c.id = e.category_id
+     WHERE e.shop_id = ?
      ORDER BY e.created_at DESC, e.id DESC`,
+    shopId,
   );
 }
 
@@ -1311,13 +1542,15 @@ export async function saveExpense(
   actor: User,
 ): Promise<void> {
   if (!Number.isFinite(input.amount) || input.amount <= 0) {
-    throw new Error("Le montant de la dépense doit être supérieur à zéro.");
+    throw new Error("Le montant de la dÃ©pense doit Ãªtre supÃ©rieur Ã  zÃ©ro.");
   }
+  const shopId = await resolveShopId(db);
   const timestamp = now();
   await db.runAsync(
     `INSERT INTO expenses
-      (category_id, amount, notes, created_by, created_by_name, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+      (shop_id, category_id, amount, notes, created_by, created_by_name, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    shopId,
     input.categoryId,
     input.amount,
     input.notes.trim(),
@@ -1328,7 +1561,7 @@ export async function saveExpense(
   await writeLog(db, actor, {
     action: "create",
     entityType: "expense",
-    description: `${actor.name} a enregistré une dépense de ${input.amount}.`,
+    description: `${actor.name} a enregistrÃ© une dÃ©pense de ${input.amount}.`,
     newValue: input,
   });
 }
@@ -1338,28 +1571,32 @@ export async function deleteExpense(
   expenseId: number,
   actor: User,
 ): Promise<void> {
+  const shopId = await resolveShopId(db);
   const previous = await db.getFirstAsync<Expense>(
-    "SELECT * FROM expenses WHERE id = ?",
+    "SELECT * FROM expenses WHERE id = ? AND shop_id = ?",
     expenseId,
+    shopId,
   );
-  if (!previous) throw new Error("Dépense introuvable.");
-  await db.runAsync("DELETE FROM expenses WHERE id = ?", expenseId);
+  if (!previous) throw new Error("DÃ©pense introuvable.");
+  await db.runAsync("DELETE FROM expenses WHERE id = ? AND shop_id = ?", expenseId, shopId);
   await writeLog(db, actor, {
     action: "delete",
     entityType: "expense",
     entityId: expenseId,
-    description: `${actor.name} a retiré une dépense de ${previous.amount}.`,
+    description: `${actor.name} a retirÃ© une dÃ©pense de ${previous.amount}.`,
     oldValue: previous,
   });
 }
 
 export async function listProducts(db: SQLiteDatabase): Promise<Product[]> {
+  const shopId = await resolveShopId(db);
   return db.getAllAsync<Product>(
-    `SELECT * FROM products WHERE is_active = 1
+    `SELECT * FROM products WHERE is_active = 1 AND shop_id = ?
      ORDER BY CASE
        WHEN tracks_stock = 1 AND stock <= low_stock_threshold THEN 0
        ELSE 1
      END, name`,
+    shopId,
   );
 }
 
@@ -1369,31 +1606,34 @@ export async function saveProduct(
   actor: User,
   productId?: number,
 ): Promise<void> {
+  const shopId = await resolveShopId(db);
   const timestamp = now();
-  await ensureCategory(db, input.category.trim() || "Général", timestamp);
+  await ensureCategory(db, input.category.trim() || "GÃ©nÃ©ral", timestamp, shopId);
   if (productId) {
     const previous = await db.getFirstAsync<Product>(
-      "SELECT * FROM products WHERE id = ?",
+      "SELECT * FROM products WHERE id = ? AND shop_id = ?",
       productId,
+      shopId,
     );
     if (!previous) throw new Error("Produit introuvable.");
     await db.runAsync(
       `UPDATE products SET name = ?, sku = ?, category = ?, price = ?,
-       low_stock_threshold = ?, tracks_stock = ?, updated_at = ? WHERE id = ?`,
+       low_stock_threshold = ?, tracks_stock = ?, updated_at = ? WHERE id = ? AND shop_id = ?`,
       input.name.trim(),
       input.sku?.trim() || null,
-      input.category.trim() || "Général",
+      input.category.trim() || "GÃ©nÃ©ral",
       input.price,
       input.lowStockThreshold,
       input.tracksStock ? 1 : 0,
       timestamp,
       productId,
+      shopId,
     );
     await writeLog(db, actor, {
       action: "update",
       entityType: "product",
       entityId: productId,
-      description: `${actor.name} a modifié le produit ${input.name.trim()}.`,
+      description: `${actor.name} a modifiÃ© le produit ${input.name.trim()}.`,
       oldValue: previous,
       newValue: input,
     });
@@ -1402,11 +1642,12 @@ export async function saveProduct(
 
   const result = await db.runAsync(
     `INSERT INTO products
-      (name, sku, category, price, stock, low_stock_threshold, tracks_stock, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      (shop_id, name, sku, category, price, stock, low_stock_threshold, tracks_stock, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    shopId,
     input.name.trim(),
     input.sku?.trim() || null,
-    input.category.trim() || "Général",
+    input.category.trim() || "GÃ©nÃ©ral",
     input.price,
     input.stock,
     input.lowStockThreshold,
@@ -1417,8 +1658,9 @@ export async function saveProduct(
   if (input.tracksStock && input.stock > 0) {
     await db.runAsync(
       `INSERT INTO stock_movements
-        (product_id, user_id, type, quantity, before_stock, after_stock, reason, created_at)
-       VALUES (?, ?, 'restock', ?, 0, ?, 'Stock initial', ?)`,
+        (shop_id, product_id, user_id, type, quantity, before_stock, after_stock, reason, created_at)
+       VALUES (?, ?, ?, 'restock', ?, 0, ?, 'Stock initial', ?)`,
+      shopId,
       result.lastInsertRowId,
       actor.id,
       input.stock,
@@ -1431,8 +1673,8 @@ export async function saveProduct(
     entityType: "product",
     entityId: result.lastInsertRowId,
     description: input.tracksStock
-      ? `${actor.name} a ajouté le produit ${input.name.trim()} avec ${input.stock} unité(s).`
-      : `${actor.name} a ajouté le produit ${input.name.trim()} avec un stock illimité.`,
+      ? `${actor.name} a ajoutÃ© le produit ${input.name.trim()} avec ${input.stock} unitÃ©(s).`
+      : `${actor.name} a ajoutÃ© le produit ${input.name.trim()} avec un stock illimitÃ©.`,
     newValue: input,
   });
 }
@@ -1445,21 +1687,24 @@ export async function adjustStock(
   actor: User,
 ): Promise<void> {
   if (!product.tracks_stock) {
-    throw new Error("Ce produit a un stock illimité.");
+    throw new Error("Ce produit a un stock illimitÃ©.");
   }
-  if (newStock < 0) throw new Error("Le stock ne peut pas être négatif.");
+  if (newStock < 0) throw new Error("Le stock ne peut pas Ãªtre nÃ©gatif.");
   const delta = newStock - product.stock;
+  const shopId = product.shop_id ?? (await resolveShopId(db));
   await withWriteTransaction(db, async (transaction) => {
     await transaction.runAsync(
-      "UPDATE products SET stock = ?, updated_at = ? WHERE id = ?",
+      "UPDATE products SET stock = ?, updated_at = ? WHERE id = ? AND shop_id = ?",
       newStock,
       now(),
       product.id,
+      shopId,
     );
     await transaction.runAsync(
       `INSERT INTO stock_movements
-        (product_id, user_id, type, quantity, before_stock, after_stock, reason, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        (shop_id, product_id, user_id, type, quantity, before_stock, after_stock, reason, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      shopId,
       product.id,
       actor.id,
       delta >= 0 ? "restock" : "adjustment",
@@ -1473,7 +1718,7 @@ export async function adjustStock(
       action: "stock_adjust",
       entityType: "product",
       entityId: product.id,
-      description: `${actor.name} a ajusté le stock de ${product.name} : ${product.stock} → ${newStock}.`,
+      description: `${actor.name} a ajustÃ© le stock de ${product.name} : ${product.stock} â†’ ${newStock}.`,
       oldValue: { stock: product.stock },
       newValue: { stock: newStock, reason: reason.trim() },
     });
@@ -1485,30 +1730,36 @@ export async function archiveProduct(
   product: Product,
   actor: User,
 ): Promise<void> {
+  const shopId = product.shop_id ?? (await resolveShopId(db));
   await db.runAsync(
-    "UPDATE products SET is_active = 0, updated_at = ? WHERE id = ?",
+    "UPDATE products SET is_active = 0, updated_at = ? WHERE id = ? AND shop_id = ?",
     now(),
     product.id,
+    shopId,
   );
   await writeLog(db, actor, {
     action: "archive",
     entityType: "product",
     entityId: product.id,
-    description: `${actor.name} a archivé le produit ${product.name}.`,
+    description: `${actor.name} a archivÃ© le produit ${product.name}.`,
     oldValue: { is_active: 1 },
     newValue: { is_active: 0 },
   });
 }
 
 export async function listClients(db: SQLiteDatabase): Promise<Client[]> {
+  const shopId = await resolveShopId(db);
   return db.getAllAsync<Client>(
     `SELECT c.*,
       COUNT(o.id) AS order_count,
       COALESCE(SUM(o.total), 0) AS total_spent
      FROM clients c
-     LEFT JOIN orders o ON o.client_id = c.id
+     LEFT JOIN orders o ON o.client_id = c.id AND o.shop_id = ?
+     WHERE c.shop_id = ?
      GROUP BY c.id
      ORDER BY c.name`,
+    shopId,
+    shopId,
   );
 }
 
@@ -1518,26 +1769,29 @@ export async function saveClient(
   actor: User,
   clientId?: number,
 ): Promise<number> {
+  const shopId = await resolveShopId(db);
   const timestamp = now();
   if (clientId) {
     const previous = await db.getFirstAsync<Client>(
-      "SELECT * FROM clients WHERE id = ?",
+      "SELECT * FROM clients WHERE id = ? AND shop_id = ?",
       clientId,
+      shopId,
     );
     if (!previous) throw new Error("Client introuvable.");
     await db.runAsync(
-      "UPDATE clients SET name = ?, phone = ?, address = ?, updated_at = ? WHERE id = ?",
+      "UPDATE clients SET name = ?, phone = ?, address = ?, updated_at = ? WHERE id = ? AND shop_id = ?",
       input.name.trim(),
       input.phone.trim(),
       input.address?.trim() || null,
       timestamp,
       clientId,
+      shopId,
     );
     await writeLog(db, actor, {
       action: "update",
       entityType: "client",
       entityId: clientId,
-      description: `${actor.name} a modifié la fiche client de ${input.name.trim()}.`,
+      description: `${actor.name} a modifiÃ© la fiche client de ${input.name.trim()}.`,
       oldValue: previous,
       newValue: input,
     });
@@ -1545,8 +1799,9 @@ export async function saveClient(
   }
 
   const result = await db.runAsync(
-    `INSERT INTO clients (name, phone, address, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO clients (shop_id, name, phone, address, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    shopId,
     input.name.trim(),
     input.phone.trim(),
     input.address?.trim() || null,
@@ -1557,7 +1812,7 @@ export async function saveClient(
     action: "create",
     entityType: "client",
     entityId: result.lastInsertRowId,
-    description: `${actor.name} a ajouté le client ${input.name.trim()} (${input.phone.trim()}).`,
+    description: `${actor.name} a ajoutÃ© le client ${input.name.trim()} (${input.phone.trim()}).`,
     newValue: input,
   });
   return result.lastInsertRowId;
@@ -1568,21 +1823,23 @@ export async function deleteClient(
   client: Client,
   actor: User,
 ): Promise<void> {
+  const shopId = client.shop_id ?? (await resolveShopId(db));
   const appointments = await db.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) AS count FROM appointments WHERE client_id = ?",
+    "SELECT COUNT(*) AS count FROM appointments WHERE client_id = ? AND shop_id = ?",
     client.id,
+    shopId,
   );
   if ((appointments?.count ?? 0) > 0) {
     throw new Error(
-      "Ce client est lié à l’historique des rendez-vous. Sa fiche doit être conservée.",
+      "Ce client est liÃ© Ã  lâ€™historique des rendez-vous. Sa fiche doit Ãªtre conservÃ©e.",
     );
   }
-  await db.runAsync("DELETE FROM clients WHERE id = ?", client.id);
+  await db.runAsync("DELETE FROM clients WHERE id = ? AND shop_id = ?", client.id, shopId);
   await writeLog(db, actor, {
     action: "delete",
     entityType: "client",
     entityId: client.id,
-    description: `${actor.name} a supprimé la fiche client de ${client.name}.`,
+    description: `${actor.name} a supprimÃ© la fiche client de ${client.name}.`,
     oldValue: client,
   });
 }
@@ -1599,13 +1856,16 @@ const appointmentSelect = `
 export async function listAppointments(
   db: SQLiteDatabase,
 ): Promise<Appointment[]> {
+  const shopId = await resolveShopId(db);
   return db.getAllAsync<Appointment>(
     `${appointmentSelect}
+     WHERE a.shop_id = ?
      ORDER BY
        CASE WHEN a.status = 'scheduled' AND a.scheduled_at >= ? THEN 0
             WHEN a.status = 'scheduled' THEN 1 ELSE 2 END,
        CASE WHEN a.status = 'scheduled' AND a.scheduled_at >= ? THEN a.scheduled_at END ASC,
        a.scheduled_at DESC`,
+    shopId,
     now(),
     now(),
   );
@@ -1617,32 +1877,36 @@ export async function saveAppointment(
   actor: User,
   appointmentId?: number,
 ): Promise<Appointment> {
+  const shopId = await resolveShopId(db);
   const timestamp = now();
   const client = await db.getFirstAsync<Client>(
-    "SELECT * FROM clients WHERE id = ?",
+    "SELECT * FROM clients WHERE id = ? AND shop_id = ?",
     input.clientId,
+    shopId,
   );
-  if (!client) throw new Error("Le client choisi n’existe plus.");
+  if (!client) throw new Error("Le client choisi nâ€™existe plus.");
   if (input.productId) {
     const product = await db.getFirstAsync<Product>(
-      "SELECT * FROM products WHERE id = ? AND is_active = 1",
+      "SELECT * FROM products WHERE id = ? AND is_active = 1 AND shop_id = ?",
       input.productId,
+      shopId,
     );
-    if (!product) throw new Error("Le produit choisi n’est plus disponible.");
+    if (!product) throw new Error("Le produit choisi nâ€™est plus disponible.");
   }
 
   let id = appointmentId ?? 0;
   if (appointmentId) {
     const previous = await db.getFirstAsync<Appointment>(
-      `${appointmentSelect} WHERE a.id = ?`,
+      `${appointmentSelect} WHERE a.id = ? AND a.shop_id = ?`,
       appointmentId,
+      shopId,
     );
     if (!previous) throw new Error("Rendez-vous introuvable.");
     await db.runAsync(
       `UPDATE appointments
        SET client_id = ?, product_id = ?, scheduled_at = ?, reminder_minutes = ?, notes = ?,
            updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ? AND shop_id = ?`,
       input.clientId,
       input.productId,
       input.scheduledAt,
@@ -1650,21 +1914,23 @@ export async function saveAppointment(
       input.notes?.trim() ?? "",
       timestamp,
       appointmentId,
+      shopId,
     );
     await writeLog(db, actor, {
       action: "update",
       entityType: "appointment",
       entityId: appointmentId,
-      description: `${actor.name} a modifié le rendez-vous de ${client.name}.`,
+      description: `${actor.name} a modifiÃ© le rendez-vous de ${client.name}.`,
       oldValue: previous,
       newValue: input,
     });
   } else {
     const result = await db.runAsync(
       `INSERT INTO appointments
-        (client_id, product_id, scheduled_at, reminder_minutes, notes, status, notification_id,
+        (shop_id, client_id, product_id, scheduled_at, reminder_minutes, notes, status, notification_id,
          created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'scheduled', NULL, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, 'scheduled', NULL, ?, ?, ?)`,
+      shopId,
       input.clientId,
       input.productId,
       input.scheduledAt,
@@ -1679,7 +1945,7 @@ export async function saveAppointment(
       action: "create",
       entityType: "appointment",
       entityId: id,
-      description: `${actor.name} a créé un rendez-vous pour ${client.name}.`,
+      description: `${actor.name} a crÃ©Ã© un rendez-vous pour ${client.name}.`,
       newValue: input,
     });
   }
@@ -1689,7 +1955,7 @@ export async function saveAppointment(
     id,
   );
   if (!appointment) {
-    throw new Error("Le rendez-vous a été enregistré mais ne peut pas être relu.");
+    throw new Error("Le rendez-vous a Ã©tÃ© enregistrÃ© mais ne peut pas Ãªtre relu.");
   }
   return appointment;
 }
@@ -1699,10 +1965,12 @@ export async function setAppointmentNotificationId(
   appointmentId: number,
   notificationId: string | null,
 ): Promise<void> {
+  const shopId = await resolveShopId(db);
   await db.runAsync(
-    "UPDATE appointments SET notification_id = ? WHERE id = ?",
+    "UPDATE appointments SET notification_id = ? WHERE id = ? AND shop_id = ?",
     notificationId,
     appointmentId,
+    shopId,
   );
 }
 
@@ -1712,19 +1980,21 @@ export async function updateAppointmentStatus(
   status: AppointmentStatus,
   actor: User,
 ): Promise<void> {
+  const shopId = appointment.shop_id ?? (await resolveShopId(db));
   await db.runAsync(
-    "UPDATE appointments SET status = ?, notification_id = NULL, updated_at = ? WHERE id = ?",
+    "UPDATE appointments SET status = ?, notification_id = NULL, updated_at = ? WHERE id = ? AND shop_id = ?",
     status,
     now(),
     appointment.id,
+    shopId,
   );
   const label =
-    status === "completed" ? "terminé" : status === "cancelled" ? "annulé" : "planifié";
+    status === "completed" ? "terminÃ©" : status === "cancelled" ? "annulÃ©" : "planifiÃ©";
   await writeLog(db, actor, {
     action: "status_change",
     entityType: "appointment",
     entityId: appointment.id,
-    description: `${actor.name} a marqué le rendez-vous de ${appointment.client_name} comme ${label}.`,
+    description: `${actor.name} a marquÃ© le rendez-vous de ${appointment.client_name} comme ${label}.`,
     oldValue: { status: appointment.status },
     newValue: { status },
   });
@@ -1734,6 +2004,7 @@ export async function listOrders(
   db: SQLiteDatabase,
   limit = 100,
 ): Promise<Order[]> {
+  const shopId = await resolveShopId(db);
   return db.getAllAsync<Order>(
     `SELECT o.*, c.name AS client_name, u.name AS user_name,
       COALESCE(o.employee_name, e.name) AS employee_name,
@@ -1743,9 +2014,11 @@ export async function listOrders(
      JOIN users u ON u.id = o.user_id
      LEFT JOIN employees e ON e.id = o.employee_id
      LEFT JOIN order_items oi ON oi.order_id = o.id
+     WHERE o.shop_id = ?
      GROUP BY o.id
      ORDER BY o.created_at DESC
      LIMIT ?`,
+    shopId,
     limit,
   );
 }
@@ -1759,6 +2032,7 @@ export async function createOrder(
   actor: User,
 ): Promise<Order> {
   if (cart.length === 0) throw new Error("Ajoutez au moins un produit.");
+  const shopId = await resolveShopId(db);
   const timestamp = now();
   const orderNumber = `CMD-${timestamp
     .replace(/\D/g, "")
@@ -1767,20 +2041,22 @@ export async function createOrder(
   let createdOrderId = 0;
   await withWriteTransaction(db, async (transaction) => {
     const employee = await transaction.getFirstAsync<Employee>(
-      "SELECT * FROM employees WHERE id = ? AND is_active = 1",
+      "SELECT * FROM employees WHERE id = ? AND is_active = 1 AND shop_id = ?",
       employeeId,
+      shopId,
     );
     if (!employee) {
-      throw new Error("Choisissez un employé actif pour attribuer la vente.");
+      throw new Error("Choisissez un employÃ© actif pour attribuer la vente.");
     }
     let total = 0;
     const checked: Array<{ line: CartLine; current: Product }> = [];
     for (const line of cart) {
       const current = await transaction.getFirstAsync<Product>(
-        "SELECT * FROM products WHERE id = ? AND is_active = 1",
+        "SELECT * FROM products WHERE id = ? AND is_active = 1 AND shop_id = ?",
         line.product.id,
+        shopId,
       );
-      if (!current) throw new Error(`${line.product.name} n’est plus disponible.`);
+      if (!current) throw new Error(`${line.product.name} nâ€™est plus disponible.`);
       if (current.tracks_stock && line.quantity > current.stock) {
         throw new Error(
           `Stock insuffisant pour ${current.name} : ${current.stock} disponible(s).`,
@@ -1792,8 +2068,9 @@ export async function createOrder(
 
     const orderResult = await transaction.runAsync(
       `INSERT INTO orders
-        (order_number, client_id, user_id, employee_id, employee_name, total, payment_method, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'paid', ?)`,
+        (shop_id, order_number, client_id, user_id, employee_id, employee_name, total, payment_method, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paid', ?)`,
+      shopId,
       orderNumber,
       clientId,
       actor.id,
@@ -1808,8 +2085,9 @@ export async function createOrder(
     for (const { line, current } of checked) {
       await transaction.runAsync(
         `INSERT INTO order_items
-          (order_id, product_id, product_name, unit_price, quantity, subtotal)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+          (shop_id, order_id, product_id, product_name, unit_price, quantity, subtotal)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        shopId,
         createdOrderId,
         current.id,
         current.name,
@@ -1820,15 +2098,17 @@ export async function createOrder(
       if (current.tracks_stock) {
         const afterStock = current.stock - line.quantity;
         await transaction.runAsync(
-          "UPDATE products SET stock = ?, updated_at = ? WHERE id = ?",
+          "UPDATE products SET stock = ?, updated_at = ? WHERE id = ? AND shop_id = ?",
           afterStock,
           timestamp,
           current.id,
+          shopId,
         );
         await transaction.runAsync(
           `INSERT INTO stock_movements
-            (product_id, user_id, type, quantity, before_stock, after_stock, reason, created_at)
-           VALUES (?, ?, 'sale', ?, ?, ?, ?, ?)`,
+            (shop_id, product_id, user_id, type, quantity, before_stock, after_stock, reason, created_at)
+           VALUES (?, ?, ?, 'sale', ?, ?, ?, ?, ?)`,
+          shopId,
           current.id,
           actor.id,
           -line.quantity,
@@ -1844,7 +2124,7 @@ export async function createOrder(
       action: "sale",
       entityType: "order",
       entityId: createdOrderId,
-      description: `${actor.name} a encaissé la commande ${orderNumber} pour ${employee.name} — ${total} FC — ${paymentMethod === "cash" ? "Espèces" : paymentMethod === "card" ? "Carte" : "Mobile Money"}.`,
+      description: `${actor.name} a encaissÃ© la commande ${orderNumber} pour ${employee.name} â€” ${total} FC â€” ${paymentMethod === "cash" ? "EspÃ¨ces" : paymentMethod === "card" ? "Carte" : "Mobile Money"}.`,
       newValue: {
         orderNumber,
         clientId,
@@ -1870,10 +2150,11 @@ export async function createOrder(
      LEFT JOIN clients c ON c.id = o.client_id
      JOIN users u ON u.id = o.user_id
      LEFT JOIN employees e ON e.id = o.employee_id
-     WHERE o.id = ?`,
+     WHERE o.id = ? AND o.shop_id = ?`,
     createdOrderId,
+    shopId,
   );
-  if (!order) throw new Error("La commande a été créée mais ne peut pas être relue.");
+  if (!order) throw new Error("La commande a Ã©tÃ© crÃ©Ã©e mais ne peut pas Ãªtre relue.");
   return order;
 }
 
@@ -1904,6 +2185,7 @@ export async function getStatistics(
   db: SQLiteDatabase,
   period: StatisticsPeriod,
 ): Promise<StatisticsData> {
+  const shopId = await resolveShopId(db);
   const startAt = startForPeriod(period, new Date()).toISOString();
   const [summary, clients, topProducts, topEmployees, revenueByDay, expensesByDay, recentOrders] =
     await Promise.all([
@@ -1919,57 +2201,64 @@ export async function getStatistics(
             SELECT SUM(oi.quantity)
             FROM order_items oi
             JOIN orders item_order ON item_order.id = oi.order_id
-            WHERE item_order.created_at >= ?
+            WHERE item_order.created_at >= ? AND item_order.shop_id = ?
           ), 0) AS itemsSold
          FROM orders
-         WHERE created_at >= ?`,
+         WHERE created_at >= ? AND shop_id = ?`,
         startAt,
+        shopId,
         startAt,
+        shopId,
       ),
       db.getFirstAsync<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM clients WHERE created_at >= ?",
+        "SELECT COUNT(*) AS count FROM clients WHERE created_at >= ? AND shop_id = ?",
         startAt,
+        shopId,
       ),
       db.getAllAsync<StatisticsData["topProducts"][number]>(
         `SELECT oi.product_id AS id, oi.product_name AS name,
           SUM(oi.quantity) AS quantity, SUM(oi.subtotal) AS revenue
          FROM order_items oi
          JOIN orders o ON o.id = oi.order_id
-         WHERE o.created_at >= ?
+         WHERE o.created_at >= ? AND o.shop_id = ?
          GROUP BY oi.product_id, oi.product_name
          ORDER BY quantity DESC, revenue DESC
          LIMIT 8`,
         startAt,
+        shopId,
       ),
       db.getAllAsync<StatisticsData["topEmployees"][number]>(
         `SELECT o.employee_id AS id,
-          COALESCE(o.employee_name, e.name, 'Non attribuée') AS name,
+          COALESCE(o.employee_name, e.name, 'Non attribuÃ©e') AS name,
           COUNT(*) AS orderCount, SUM(o.total) AS revenue
          FROM orders o
          LEFT JOIN employees e ON e.id = o.employee_id
-         WHERE o.created_at >= ?
-         GROUP BY o.employee_id, COALESCE(o.employee_name, e.name, 'Non attribuée')
+         WHERE o.created_at >= ? AND o.shop_id = ?
+         GROUP BY o.employee_id, COALESCE(o.employee_name, e.name, 'Non attribuÃ©e')
          ORDER BY revenue DESC, orderCount DESC
          LIMIT 8`,
         startAt,
+        shopId,
       ),
       db.getAllAsync<StatisticsData["revenueByDay"][number]>(
         `SELECT date(created_at, 'localtime') AS day,
           SUM(total) AS revenue, COUNT(*) AS orderCount
          FROM orders
-         WHERE created_at >= ?
+         WHERE created_at >= ? AND shop_id = ?
          GROUP BY date(created_at, 'localtime')
          ORDER BY day ASC`,
         startAt,
+        shopId,
       ),
       db.getAllAsync<StatisticsData["expensesByDay"][number]>(
         `SELECT date(created_at, 'localtime') AS day,
           SUM(amount) AS total, COUNT(*) AS count
          FROM expenses
-         WHERE created_at >= ?
+         WHERE created_at >= ? AND shop_id = ?
          GROUP BY date(created_at, 'localtime')
          ORDER BY day ASC`,
         startAt,
+        shopId,
       ),
       listOrders(db, 8),
     ]);
@@ -2000,6 +2289,7 @@ export async function getStatistics(
 export async function getDashboardStats(
   db: SQLiteDatabase,
 ): Promise<DashboardStats> {
+  const shopId = await resolveShopId(db);
   const current = new Date();
   const day = startOfDay(current).toISOString();
   const week = startOfWeek(current).toISOString();
@@ -2018,11 +2308,13 @@ export async function getDashboardStats(
           COALESCE(SUM(CASE WHEN created_at >= ? THEN total ELSE 0 END), 0) AS revenueWeek,
           COALESCE(SUM(CASE WHEN created_at >= ? THEN total ELSE 0 END), 0) AS revenueMonth,
           COALESCE(SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END), 0) AS ordersToday
-         FROM orders`,
+         FROM orders
+         WHERE shop_id = ?`,
         day,
         week,
         month,
         day,
+        shopId,
       ),
       db.getFirstAsync<{
         newClientsToday: number;
@@ -2033,17 +2325,21 @@ export async function getDashboardStats(
           COALESCE(SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END), 0) AS newClientsToday,
           COALESCE(SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END), 0) AS newClientsWeek,
           COALESCE(SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END), 0) AS newClientsMonth
-         FROM clients`,
+         FROM clients
+         WHERE shop_id = ?`,
         day,
         week,
         month,
+        shopId,
       ),
       db.getFirstAsync<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM employees WHERE is_active = 1",
+        "SELECT COUNT(*) AS count FROM employees WHERE is_active = 1 AND shop_id = ?",
+        shopId,
       ),
       db.getFirstAsync<{ count: number }>(
         `SELECT COUNT(*) AS count FROM products
-         WHERE is_active = 1 AND tracks_stock = 1 AND stock <= low_stock_threshold`,
+         WHERE is_active = 1 AND tracks_stock = 1 AND stock <= low_stock_threshold AND shop_id = ?`,
+        shopId,
       ),
       db.getFirstAsync<{
         expensesToday: number;
@@ -2054,21 +2350,24 @@ export async function getDashboardStats(
           COALESCE(SUM(CASE WHEN created_at >= ? THEN amount ELSE 0 END), 0) AS expensesToday,
           COALESCE(SUM(CASE WHEN created_at >= ? THEN amount ELSE 0 END), 0) AS expensesWeek,
           COALESCE(SUM(CASE WHEN created_at >= ? THEN amount ELSE 0 END), 0) AS expensesMonth
-         FROM expenses`,
+         FROM expenses
+         WHERE shop_id = ?`,
         day,
         week,
         month,
+        shopId,
       ),
       db.getAllAsync<{ name: string; quantity: number; revenue: number }>(
         `SELECT oi.product_name AS name, SUM(oi.quantity) AS quantity,
           SUM(oi.subtotal) AS revenue
          FROM order_items oi
          JOIN orders o ON o.id = oi.order_id
-         WHERE o.created_at >= ?
+         WHERE o.created_at >= ? AND o.shop_id = ?
          GROUP BY oi.product_id, oi.product_name
          ORDER BY quantity DESC
          LIMIT 5`,
         month,
+        shopId,
       ),
       listOrders(db, 5),
     ]);
@@ -2095,8 +2394,10 @@ export async function listLogs(
   db: SQLiteDatabase,
   limit = 250,
 ): Promise<ActivityLog[]> {
+  const shopId = await resolveShopId(db);
   return db.getAllAsync<ActivityLog>(
-    "SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT ?",
+    "SELECT * FROM activity_logs WHERE shop_id = ? ORDER BY created_at DESC LIMIT ?",
+    shopId,
     limit,
   );
 }
@@ -2128,7 +2429,7 @@ export async function setSetting(
   await writeLog(db, actor, {
     action: "update",
     entityType: "setting",
-    description: `${actor.name} a modifié le paramètre ${key}.`,
+    description: `${actor.name} a modifiÃ© le paramÃ¨tre ${key}.`,
     oldValue: { value: previous },
     newValue: { value },
   });
@@ -2143,7 +2444,7 @@ export async function seedDemoData(
      WHERE sku IN ('RIZ-5KG', 'HUILE-1L', 'SAVON-MEN', 'SUCRE-1KG')`,
   );
   if ((existing?.count ?? 0) > 0) {
-    throw new Error("Les données de démonstration ont déjà été ajoutées.");
+    throw new Error("Les donnÃ©es de dÃ©monstration ont dÃ©jÃ  Ã©tÃ© ajoutÃ©es.");
   }
   const products: ProductInput[] = [
     {
@@ -2165,7 +2466,7 @@ export async function seedDemoData(
       tracksStock: true,
     },
     {
-      name: "Savon de ménage",
+      name: "Savon de mÃ©nage",
       sku: "SAVON-MEN",
       category: "Maison",
       price: 2500,
@@ -2194,6 +2495,6 @@ export async function seedDemoData(
   await writeLog(db, actor, {
     action: "seed",
     entityType: "database",
-    description: `${actor.name} a chargé les données de démonstration.`,
+    description: `${actor.name} a chargÃ© les donnÃ©es de dÃ©monstration.`,
   });
 }

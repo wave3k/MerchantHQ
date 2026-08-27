@@ -1,4 +1,4 @@
-import type { SQLiteDatabase } from "expo-sqlite";
+﻿import type { SQLiteDatabase } from "expo-sqlite";
 import {
   Alert,
   Pressable,
@@ -28,7 +28,12 @@ import {
   getSetting,
   seedDemoData,
   setSetting,
+  listShops,
+  createShop,
+  updateShop,
 } from "../data/database";
+import { getCurrentShopId, setCurrentShopId } from "../data/shopContext";
+import type { Shop } from "../types";
 import { pickShopLogo } from "../data/shopLogo";
 import { LogoPicker } from "../components/LogoPicker";
 import { logoRegistry } from "../components/logos";
@@ -169,15 +174,17 @@ export function SettingsScreen({
   const [website, setWebsite] = useState("");
   const [legalInfo, setLegalInfo] = useState("");
   const [taxRate, setTaxRate] = useState("0");
-  const [openingHours, setOpeningHours] = useState("08:00 – 18:00");
+  const [openingHours, setOpeningHours] = useState("08:00 â€“ 18:00");
   const [paymentCash, setPaymentCash] = useState(true);
   const [paymentMobile, setPaymentMobile] = useState(true);
   const [paymentCard, setPaymentCard] = useState(true);
   const [logoUri, setLogoUri] = useState<string | null>(null);
-  const [appLogo, setAppLogo] = useState<LogoName>("vente-cash");
+  const [appLogo, setAppLogo] = useState<LogoName>("merchant-cash");
   const [logoPrimary, setLogoPrimary] = useState("#1D55C5");
   const [logoSecondary, setLogoSecondary] = useState("#E8EFFC");
   const [logoPickerOpen, setLogoPickerOpen] = useState(false);
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [currentShopId, setCurrentShopIdState] = useState<string | null>(null);
   const [busy, setBusy] = useState<
     | "save"
     | "preferences"
@@ -188,6 +195,8 @@ export function SettingsScreen({
     | "notifications"
     | "cloud-sync"
     | "cloud-restore"
+    | "shop-create"
+    | "shop-switch"
     | null
   >(null);
 
@@ -252,16 +261,98 @@ export function SettingsScreen({
       setWebsite(savedWebsite ?? "");
       setLegalInfo(savedLegalInfo ?? "");
       setTaxRate(savedTax ?? "0");
-      setOpeningHours(savedHours ?? "08:00 – 18:00");
+      setOpeningHours(savedHours ?? "08:00 â€“ 18:00");
       setPaymentCash(cash !== "0");
       setPaymentMobile(mobile !== "0");
       setPaymentCard(card !== "0");
       setLogoUri(savedLogo || null);
-      setAppLogo((savedAppLogo as LogoName) || "vente-cash");
+      setAppLogo((savedAppLogo as LogoName) || "merchant-cash");
       setLogoPrimary(savedLogoPrimary || "#1D55C5");
       setLogoSecondary(savedLogoSecondary || "#E8EFFC");
     });
   }, [db]);
+
+  async function refreshShops() {
+    const [shopsList, current] = await Promise.all([
+      listShops(db).catch(() => []),
+      getCurrentShopId(),
+    ]);
+    setShops(shopsList);
+    setCurrentShopIdState(current);
+  }
+
+  useEffect(() => {
+    void refreshShops();
+  }, [db]);
+
+  async function handleCreateShop() {
+    Alert.prompt(
+      "Nouvelle boutique",
+      "Nom de la boutique :",
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "CrÃ©er",
+          onPress: (value?: string) => {
+            void (async () => {
+              if (!value?.trim()) return;
+              setBusy("shop-create");
+              try {
+                const shop = await createShop(db, value.trim());
+                await setCurrentShopId(shop.id);
+                await refreshShops();
+                Alert.alert("Boutique crÃ©Ã©e", `Â« ${shop.name} Â» est maintenant active.`);
+              } catch (err) {
+                Alert.alert("Erreur", err instanceof Error ? err.message : "Impossible de crÃ©er la boutique.");
+              } finally {
+                setBusy(null);
+              }
+            })();
+          },
+        },
+      ],
+      "plain-text",
+    );
+  }
+
+  async function handleSwitchShop(shopId: string) {
+    setBusy("shop-switch");
+    try {
+      await setCurrentShopId(shopId);
+      await refreshShops();
+      Alert.alert("Boutique active", "Les donnÃ©es affichÃ©es sont dÃ©sormais celles de cette boutique.");
+    } catch (err) {
+      Alert.alert("Erreur", err instanceof Error ? err.message : "Changement impossible.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleRenameShop(shopId: string, currentName: string) {
+    Alert.prompt(
+      "Renommer la boutique",
+      "Nouveau nom :",
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Enregistrer",
+          onPress: (value?: string) => {
+            void (async () => {
+              if (!value?.trim()) return;
+              try {
+                await updateShop(db, shopId, { name: value.trim() });
+                await refreshShops();
+              } catch (err) {
+                Alert.alert("Erreur", err instanceof Error ? err.message : "Renommage impossible.");
+              }
+            })();
+          },
+        },
+      ],
+      "plain-text",
+      currentName,
+    );
+  }
 
   useEffect(() => {
     if (!developerMode) return;
@@ -288,8 +379,8 @@ export function SettingsScreen({
       setAccountStatus(result);
       if (result.outcome === "synced") {
         Alert.alert(
-          "Sauvegarde terminée",
-          `Les données du ${result.lastSuccessDate ?? "jour"} sont enregistrées dans votre compte.`,
+          "Sauvegarde terminÃ©e",
+          `Les donnÃ©es du ${result.lastSuccessDate ?? "jour"} sont enregistrÃ©es dans votre compte.`,
         );
       } else if (result.outcome === "not_configured") {
         Alert.alert(
@@ -298,14 +389,14 @@ export function SettingsScreen({
         );
       } else if (result.outcome === "remote_newer") {
         Alert.alert(
-          "Copie plus récente disponible",
-          "Une autre tablette possède une copie plus récente. Redémarrez l’application pour la charger ou garder vos données.",
+          "Copie plus rÃ©cente disponible",
+          "Une autre tablette possÃ¨de une copie plus rÃ©cente. RedÃ©marrez lâ€™application pour la charger ou garder vos donnÃ©es.",
         );
       } else {
         Alert.alert(
           "Sauvegarde en attente",
           result.lastError ??
-            "Internet est indisponible. La sauvegarde sera envoyée à la prochaine connexion.",
+            "Internet est indisponible. La sauvegarde sera envoyÃ©e Ã  la prochaine connexion.",
         );
       }
     } catch (caught) {
@@ -336,7 +427,7 @@ export function SettingsScreen({
       }
       Alert.alert(
         "Restaurer la sauvegarde du compte ?",
-        `Copie du ${new Date(remote.snapshotAt).toLocaleString(locale())} (app ${remote.appVersion}). Les données actuelles de la tablette seront remplacées.`,
+        `Copie du ${new Date(remote.snapshotAt).toLocaleString(locale())} (app ${remote.appVersion}). Les donnÃ©es actuelles de la tablette seront remplacÃ©es.`,
         [
           { text: "Annuler", style: "cancel" },
           {
@@ -347,8 +438,8 @@ export function SettingsScreen({
                 try {
                   await restoreCloudBackup(db, remote);
                   Alert.alert(
-                    "Sauvegarde restaurée",
-                    "Les données du compte ont été restaurées. Reconnectez-vous.",
+                    "Sauvegarde restaurÃ©e",
+                    "Les donnÃ©es du compte ont Ã©tÃ© restaurÃ©es. Reconnectez-vous.",
                     [{ text: "Se reconnecter", onPress: onImported }],
                   );
                 } catch (e) {
@@ -367,7 +458,7 @@ export function SettingsScreen({
     } catch (caught) {
       Alert.alert(
         "Restauration impossible",
-        caught instanceof Error ? caught.message : "Vérifiez la connexion Internet.",
+        caught instanceof Error ? caught.message : "VÃ©rifiez la connexion Internet.",
       );
     } finally {
       setBusy(null);
@@ -387,7 +478,7 @@ export function SettingsScreen({
     } catch (caught) {
       Alert.alert(
         "Enregistrement impossible",
-        caught instanceof Error ? caught.message : "Le nom n’a pas été enregistré.",
+        caught instanceof Error ? caught.message : "Le nom nâ€™a pas Ã©tÃ© enregistrÃ©.",
       );
     } finally {
       setBusy(null);
@@ -405,7 +496,7 @@ export function SettingsScreen({
     if (currencySecondary !== "none" && (!Number.isFinite(rate) || rate <= 0)) {
       Alert.alert(
         "Taux incorrect",
-        "Indiquez combien vaut une unité de la devise secondaire dans la devise principale.",
+        "Indiquez combien vaut une unitÃ© de la devise secondaire dans la devise principale.",
       );
       return;
     }
@@ -432,13 +523,13 @@ export function SettingsScreen({
       });
       onPreferencesChange();
       Alert.alert(
-        "Préférences enregistrées",
-        "Le thème et la langue ont été appliqués.",
+        "PrÃ©fÃ©rences enregistrÃ©es",
+        "Le thÃ¨me et la langue ont Ã©tÃ© appliquÃ©s.",
       );
     } catch (caught) {
       Alert.alert(
         "Enregistrement impossible",
-        caught instanceof Error ? caught.message : "Les préférences n’ont pas été enregistrées.",
+        caught instanceof Error ? caught.message : "Les prÃ©fÃ©rences nâ€™ont pas Ã©tÃ© enregistrÃ©es.",
       );
     } finally {
       setBusy(null);
@@ -448,7 +539,7 @@ export function SettingsScreen({
   async function saveEstablishment() {
     const tax = Number(taxRate.replace(",", "."));
     if (!Number.isFinite(tax) || tax < 0 || tax > 100) {
-      Alert.alert("Taux incorrect", "Le taux doit être compris entre 0 et 100 %.");
+      Alert.alert("Taux incorrect", "Le taux doit Ãªtre compris entre 0 et 100 %.");
       return;
     }
     if (!paymentCash && !paymentMobile && !paymentCard) {
@@ -473,11 +564,11 @@ export function SettingsScreen({
         ["payment_card", paymentCard ? "1" : "0"],
         ["shop_logo", logoUri ?? ""],
       ]);
-      Alert.alert("Établissement enregistré");
+      Alert.alert("Ã‰tablissement enregistrÃ©");
     } catch (caught) {
       Alert.alert(
         "Enregistrement impossible",
-        caught instanceof Error ? caught.message : "Les informations n’ont pas été enregistrées.",
+        caught instanceof Error ? caught.message : "Les informations nâ€™ont pas Ã©tÃ© enregistrÃ©es.",
       );
     } finally {
       setBusy(null);
@@ -494,7 +585,7 @@ export function SettingsScreen({
         "Logo indisponible",
         caught instanceof Error
           ? caught.message
-          : "Le logo n’a pas pu être chargé.",
+          : "Le logo nâ€™a pas pu Ãªtre chargÃ©.",
       );
     } finally {
       setBusy(null);
@@ -510,7 +601,7 @@ export function SettingsScreen({
         "Sauvegarde impossible",
         caught instanceof Error
           ? caught.message
-          : "Le fichier n’a pas pu être créé.",
+          : "Le fichier nâ€™a pas pu Ãªtre crÃ©Ã©.",
       );
     } finally {
       setBusy(null);
@@ -520,7 +611,7 @@ export function SettingsScreen({
   function requestImport() {
     Alert.alert(
       "Restaurer une sauvegarde ?",
-      "Toutes les données actuelles seront remplacées par le contenu du fichier. Cette action ne peut pas être annulée.",
+      "Toutes les donnÃ©es actuelles seront remplacÃ©es par le contenu du fichier. Cette action ne peut pas Ãªtre annulÃ©e.",
       [
         { text: "Annuler", style: "cancel" },
         {
@@ -533,8 +624,8 @@ export function SettingsScreen({
                 const imported = await importBackup(db);
                 if (imported) {
                   Alert.alert(
-                    "Sauvegarde restaurée",
-                    "Les données ont été remplacées. Reconnectez-vous pour continuer.",
+                    "Sauvegarde restaurÃ©e",
+                    "Les donnÃ©es ont Ã©tÃ© remplacÃ©es. Reconnectez-vous pour continuer.",
                     [{ text: "Se reconnecter", onPress: onImported }],
                   );
                 }
@@ -543,7 +634,7 @@ export function SettingsScreen({
                   "Restauration impossible",
                   caught instanceof Error
                     ? caught.message
-                    : "Le fichier n’a pas pu être restauré.",
+                    : "Le fichier nâ€™a pas pu Ãªtre restaurÃ©.",
                 );
               } finally {
                 setBusy(null);
@@ -560,15 +651,15 @@ export function SettingsScreen({
     try {
       await seedDemoData(db, user);
       Alert.alert(
-        "Données ajoutées",
-        "Quatre produits et un client de démonstration sont disponibles.",
+        "DonnÃ©es ajoutÃ©es",
+        "Quatre produits et un client de dÃ©monstration sont disponibles.",
       );
     } catch (caught) {
       Alert.alert(
         "Ajout impossible",
         caught instanceof Error
           ? caught.message
-          : "Les données n’ont pas été ajoutées.",
+          : "Les donnÃ©es nâ€™ont pas Ã©tÃ© ajoutÃ©es.",
       );
     } finally {
       setBusy(null);
@@ -581,8 +672,8 @@ export function SettingsScreen({
       const granted = await prepareDeviceNotifications(db);
       if (!granted) {
         Alert.alert(
-          "Notifications désactivées",
-          "Autorisez les notifications dans les réglages Android de MerchantHQ, puis réessayez.",
+          "Notifications dÃ©sactivÃ©es",
+          "Autorisez les notifications dans les rÃ©glages Android de MerchantHQ, puis rÃ©essayez.",
         );
         return;
       }
@@ -592,7 +683,7 @@ export function SettingsScreen({
         "Activation impossible",
         caught instanceof Error
           ? caught.message
-          : "Android n’a pas pu activer les notifications locales.",
+          : "Android nâ€™a pas pu activer les notifications locales.",
       );
     } finally {
       setBusy(null);
@@ -612,8 +703,8 @@ export function SettingsScreen({
       setDeveloperMode(true);
       setVersionTaps(0);
       Alert.alert(
-        "Mode développeur activé",
-        "Les outils avancés sont visibles pendant 5 minutes.",
+        "Mode dÃ©veloppeur activÃ©",
+        "Les outils avancÃ©s sont visibles pendant 5 minutes.",
       );
       return;
     }
@@ -627,16 +718,16 @@ export function SettingsScreen({
 
   return (
     <Page
-      description="Changez le nom affiché dans l’application."
-      title="Réglages"
+      description="Changez le nom affichÃ© dans lâ€™application."
+      title="RÃ©glages"
     >
       <SettingCard
-        description="Ce nom apparaît en haut de l’écran."
+        description="Ce nom apparaÃ®t en haut de lâ€™Ã©cran."
         icon="Text"
         title="Nom de la boutique"
       >
         <TextField
-          label="Nom affiché"
+          label="Nom affichÃ©"
           onChangeText={setShopName}
           placeholder="Ma boutique"
           value={shopName}
@@ -650,24 +741,71 @@ export function SettingsScreen({
       </SettingCard>
 
       <SettingCard
-        description="Votre boutique est sauvegardée chaque soir, même sans connexion au moment de fermer."
+        description="GÃ©rez vos boutiques : crÃ©ez-en de nouvelles ou basculez entre elles. Chaque boutique a ses propres produits, clients et sauvegardes."
+        icon="Store"
+        title="Mes boutiques"
+      >
+        {shops.map((shop) => {
+          const active = shop.id === currentShopId;
+          return (
+            <Pressable
+              accessibilityRole="button"
+              key={shop.id}
+              onPress={() => void handleSwitchShop(shop.id)}
+              style={[
+                styles.shopRow,
+                active && styles.shopRowActive,
+              ]}
+            >
+              <View style={styles.shopBadge}>
+                <Text style={styles.shopBadgeText}>
+                  {shop.name.slice(0, 1).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.shopRowCopy}>
+                <Text style={styles.shopRowName}>{shop.name}</Text>
+                <Text style={styles.shopRowMeta}>
+                  {active ? "Boutique active" : "Toucher pour activer"}
+                </Text>
+              </View>
+              {active ? (
+                <Icon name="CircleCheck" size={18} color={colors.success} />
+              ) : (
+                <Icon name="ArrowRight" size={18} color={colors.muted} />
+              )}
+            </Pressable>
+          );
+        })}
+        <View style={styles.actions}>
+          <AppButton
+            icon="Plus"
+            label="Nouvelle boutique"
+            loading={busy === "shop-create"}
+            onPress={() => void handleCreateShop()}
+            tone="secondary"
+          />
+        </View>
+      </SettingCard>
+
+      <SettingCard
+        description="Votre boutique est sauvegardÃ©e chaque soir, mÃªme sans connexion au moment de fermer."
         icon="CloudUpload"
-        title="Compte connecté"
+        title="Compte connectÃ©"
       >
         <View style={styles.cloudRow}>
           <View style={styles.cloudDot} />
           <Text style={styles.cloudText}>
             {accountStatus?.username
-              ? `Connecté : ${accountStatus.username}`
-              : "Compte non chargé"}
+              ? `ConnectÃ© : ${accountStatus.username}`
+              : "Compte non chargÃ©"}
           </Text>
         </View>
         <Text style={styles.cloudDetail}>
           {accountStatus?.pendingDate
-            ? `Sauvegarde du ${accountStatus.pendingDate} en attente — sera envoyée à la prochaine connexion.`
+            ? `Sauvegarde du ${accountStatus.pendingDate} en attente â€” sera envoyÃ©e Ã  la prochaine connexion.`
             : accountStatus?.lastSuccessAt
-              ? `Dernière sauvegarde : ${new Date(accountStatus.lastSuccessAt).toLocaleString(locale())}.`
-              : "Aucune sauvegarde envoyée pour l’instant."}
+              ? `DerniÃ¨re sauvegarde : ${new Date(accountStatus.lastSuccessAt).toLocaleString(locale())}.`
+              : "Aucune sauvegarde envoyÃ©e pour lâ€™instant."}
         </Text>
         {accountStatus?.lastError ? (
           <Text style={styles.cloudDetailError}>{accountStatus.lastError}</Text>
@@ -690,7 +828,7 @@ export function SettingsScreen({
           />
           <AppButton
             icon="LogOut"
-            label="Se déconnecter"
+            label="Se dÃ©connecter"
             onPress={() => void onAccountDisconnected()}
             tone="secondary"
           />
@@ -699,9 +837,9 @@ export function SettingsScreen({
 
       <View style={[styles.columns, width < 940 && styles.columnsStacked]}>
         <SettingCard
-          description="Adresse, contact, taxe, horaires et paiements acceptés."
+          description="Adresse, contact, taxe, horaires et paiements acceptÃ©s."
           icon="Building2"
-          title="Établissement"
+          title="Ã‰tablissement"
         >
           <TextField
             label="Adresse"
@@ -711,9 +849,9 @@ export function SettingsScreen({
           />
           <TextField
             keyboardType="phone-pad"
-            label="Téléphone"
+            label="TÃ©lÃ©phone"
             onChangeText={setPhone}
-            placeholder="+243…"
+            placeholder="+243â€¦"
             value={phone}
           />
           <View style={styles.twoFields}>
@@ -739,9 +877,9 @@ export function SettingsScreen({
             </View>
           </View>
           <TextField
-            label="Identifiant légal"
+            label="Identifiant lÃ©gal"
             onChangeText={setLegalInfo}
-            placeholder="RCCM, numéro fiscal…"
+            placeholder="RCCM, numÃ©ro fiscalâ€¦"
             value={legalInfo}
           />
           <View style={styles.twoFields}>
@@ -758,14 +896,14 @@ export function SettingsScreen({
               <TextField
                 label="Horaires"
                 onChangeText={setOpeningHours}
-                placeholder="08:00 – 18:00"
+                placeholder="08:00 â€“ 18:00"
                 value={openingHours}
               />
             </View>
           </View>
           <View style={styles.toggleList}>
             <ToggleRow
-              label="Espèces"
+              label="EspÃ¨ces"
               onChange={setPaymentCash}
               value={paymentCash}
             />
@@ -784,7 +922,7 @@ export function SettingsScreen({
             <View style={styles.logoPreview}>
               {logoUri ? (
                 <Image
-                  accessibilityLabel="Logo de l’établissement"
+                  accessibilityLabel="Logo de lâ€™Ã©tablissement"
                   source={{ uri: logoUri }}
                   style={styles.logoImage}
                 />
@@ -811,14 +949,14 @@ export function SettingsScreen({
           </View>
 <AppButton
             icon="Save"
-            label="Enregistrer l'établissement"
+            label="Enregistrer l'Ã©tablissement"
             loading={busy === "establishment"}
             onPress={() => void saveEstablishment()}
           />
         </SettingCard>
 
         <SettingCard
-          description="Logo et couleurs affichés dans l'application."
+          description="Logo et couleurs affichÃ©s dans l'application."
           icon="Palette"
           title="Logo de l'application"
         >
@@ -856,7 +994,7 @@ export function SettingsScreen({
         </SettingCard>
 
         <SettingCard
-          description="La devise principale sert aux prix. La secondaire donne un repère."
+          description="La devise principale sert aux prix. La secondaire donne un repÃ¨re."
           icon="Banknote"
           title="Devise et affichage"
         >
@@ -899,7 +1037,7 @@ export function SettingsScreen({
             <ChoiceRow
               onChange={setLanguage}
               options={[
-                { value: "fr", label: "Français" },
+                { value: "fr", label: "FranÃ§ais" },
                 { value: "en", label: "English" },
                 { value: "ln", label: "Lingala" },
                 { value: "sw", label: "Kiswahili" },
@@ -908,7 +1046,7 @@ export function SettingsScreen({
             />
           </View>
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>{t("Thème")}</Text>
+            <Text style={styles.fieldLabel}>{t("ThÃ¨me")}</Text>
             <ChoiceRow
               onChange={setTheme}
               options={[
@@ -935,9 +1073,9 @@ export function SettingsScreen({
               <Icon name="Wrench" size={22} color={colors.accent} />
             </View>
             <View style={styles.developerCopy}>
-              <Text style={styles.developerTitle}>Mode développeur</Text>
+              <Text style={styles.developerTitle}>Mode dÃ©veloppeur</Text>
               <Text style={styles.developerDescription}>
-                Outils avancés pour préparer, sauvegarder ou vérifier la tablette.
+                Outils avancÃ©s pour prÃ©parer, sauvegarder ou vÃ©rifier la tablette.
               </Text>
             </View>
             <AppButton
@@ -951,7 +1089,7 @@ export function SettingsScreen({
 
           <View style={[styles.columns, width < 940 && styles.columnsStacked]}>
             <SettingCard
-              description="Créez une copie à conserver ailleurs."
+              description="CrÃ©ez une copie Ã  conserver ailleurs."
               icon="Archive"
               title="Copie sur un fichier"
             >
@@ -962,13 +1100,13 @@ export function SettingsScreen({
                   color={colors.accent}
                 />
                 <Text style={styles.backupText}>
-                  La copie contient toutes les données de la boutique.
+                  La copie contient toutes les donnÃ©es de la boutique.
                 </Text>
               </View>
               <View style={styles.actions}>
                 <AppButton
                   icon="Share"
-                  label="Créer une copie"
+                  label="CrÃ©er une copie"
                   loading={busy === "export"}
                   onPress={() => void runExport()}
                 />
@@ -983,14 +1121,14 @@ export function SettingsScreen({
             </SettingCard>
 
             <SettingCard
-              description="Rappels de rendez-vous, stock faible et résumé du jour."
+              description="Rappels de rendez-vous, stock faible et rÃ©sumÃ© du jour."
               icon="Bell"
               title="Rappels sur la tablette"
             >
               <View style={styles.demoRow}>
                 <Text style={styles.demoText}>
-                  Le résumé du jour est prévu à 19 h. Les rappels fonctionnent
-                  même sans Internet.
+                  Le rÃ©sumÃ© du jour est prÃ©vu Ã  19 h. Les rappels fonctionnent
+                  mÃªme sans Internet.
                 </Text>
                 <AppButton
                   icon="Bell"
@@ -1006,11 +1144,11 @@ export function SettingsScreen({
           <SettingCard
             description="Ajoute quelques exemples seulement si la liste des produits est vide."
             icon="FlaskConical"
-            title="Données d’essai"
+            title="DonnÃ©es dâ€™essai"
           >
             <View style={styles.demoRow}>
               <Text style={styles.demoText}>
-                Ajoute quatre produits et un client pour essayer l’application.
+                Ajoute quatre produits et un client pour essayer lâ€™application.
               </Text>
               <AppButton
                 icon="CirclePlus"
@@ -1026,7 +1164,7 @@ export function SettingsScreen({
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Version de l’application"
+        accessibilityLabel="Version de lâ€™application"
         onPress={() => void handleVersionPress()}
         style={({ pressed }) => [
           styles.version,
@@ -1034,7 +1172,7 @@ export function SettingsScreen({
         ]}
       >
         <Text style={styles.versionText}>
-          MerchantHQ · Version 0.1.0
+          MerchantHQ Â· Version 0.1.0
         </Text>
       </Pressable>
 
@@ -1334,6 +1472,48 @@ function createStyles() {
     fontFamily: fonts.body,
     fontSize: 12,
     lineHeight: 18,
+  },
+  shopRow: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.rule,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: space.sm,
+    padding: space.sm,
+  },
+  shopRowActive: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
+  },
+  shopBadge: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  shopBadgeText: {
+    color: "#FFFFFF",
+    fontFamily: fonts.displayMedium,
+    fontSize: 16,
+  },
+  shopRowCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  shopRowName: {
+    color: colors.ink,
+    fontFamily: fonts.bodyMedium,
+    fontSize: 14,
+  },
+  shopRowMeta: {
+    color: colors.muted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    marginTop: 2,
   },
   version: {
     alignItems: "center",

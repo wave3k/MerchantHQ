@@ -27,7 +27,13 @@ import {
   getSetting,
   recordLogout,
   verifyBossPassword,
+  listShops,
 } from "./src/data/database";
+import {
+  initShopContext,
+  setCurrentShopId,
+  resetShopContext,
+} from "./src/data/shopContext";
 import {
   prepareDeviceNotifications,
   subscribeToNotificationNavigation,
@@ -365,8 +371,20 @@ function Application() {
     await refreshPreferences();
   }
 
+  async function handleAuthenticated(authenticated: User) {
+    const shopId = authenticated.shop_id;
+    if (shopId) {
+      await setCurrentShopId(shopId);
+    } else {
+      const shops = await listShops(db).catch(() => []);
+      if (shops[0]) await setCurrentShopId(shops[0].id);
+    }
+    setUser(authenticated);
+  }
+
   async function handleDisconnect() {
     await clearSession().catch(() => undefined);
+    await resetShopContext().catch(() => undefined);
     setUser(null);
     setSessionReady(false);
     setSetupPending(false);
@@ -376,6 +394,7 @@ function Application() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      await initShopContext();
       const session = await getSession().catch(() => null);
       if (cancelled) return;
       if (!session) {
@@ -567,7 +586,7 @@ if (sessionReady === null) {
         />
       );
     }
-    return <AuthScreen db={db} onAuthenticated={setUser} />;
+    return <AuthScreen db={db} onAuthenticated={(u) => void handleAuthenticated(u)} />;
   }
 
   let content: React.ReactNode;

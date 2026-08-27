@@ -1,6 +1,14 @@
 export type Role = "boss" | "manager" | "cashier" | "employee";
 export type AppModule = "dashboard" | "caisse" | "boutique";
 
+export interface Shop {
+  id: string;
+  name: string;
+  logo: string;
+  is_active: number;
+  created_at: string;
+}
+
 export type ScreenKey =
   | "home_dashboard"
   | "statistics"
@@ -36,6 +44,7 @@ export interface User {
   has_password: number;
   is_active: number;
   created_at: string;
+  shop_id?: string;
 }
 
 export interface Employee {
@@ -51,6 +60,7 @@ export interface Employee {
   has_account?: number;
   account_role?: Role | null;
   account_active?: number | null;
+  shop_id?: string;
 }
 
 export interface AttendanceRecord {
@@ -88,6 +98,7 @@ export interface Product {
   is_active: number;
   created_at: string;
   updated_at: string;
+  shop_id?: string;
 }
 
 export interface Client {
@@ -99,6 +110,7 @@ export interface Client {
   updated_at: string;
   order_count?: number;
   total_spent?: number;
+  shop_id?: string;
 }
 
 export interface Appointment {
@@ -117,6 +129,7 @@ export interface Appointment {
   created_by_name: string;
   created_at: string;
   updated_at: string;
+  shop_id?: string;
 }
 
 export interface AppointmentInput {
@@ -141,6 +154,7 @@ export interface Order {
   status: "paid";
   created_at: string;
   item_count?: number;
+  shop_id?: string;
 }
 
 export interface CartLine {
@@ -223,13 +237,6 @@ export interface ProductInput {
   tracksStock: boolean;
 }
 
-export interface ExpenseCategory {
-  id: number;
-  name: string;
-  is_predefined: number;
-  created_at: string;
-}
-
 export interface Expense {
   id: number;
   category_id: number | null;
@@ -239,6 +246,15 @@ export interface Expense {
   created_by: number | null;
   created_by_name: string;
   created_at: string;
+  shop_id?: string;
+}
+
+export interface ExpenseCategory {
+  id: number;
+  name: string;
+  is_predefined: number;
+  created_at: string;
+  shop_id?: string;
 }
 
 export interface ExpenseInput {

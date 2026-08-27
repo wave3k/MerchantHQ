@@ -9,6 +9,7 @@ import {
 } from "./backup";
 import { dueBusinessDate, manualBusinessDate, shouldOfferRemoteRestore } from "../domain/cloudBackup";
 import { getDeviceId, getSession, getWorkerUrl, saveSession, type CloudSession } from "./cloudSession";
+import { getCurrentShopId } from "./shopContext";
 
 const LAST_SUCCESS_DATE_KEY = "cloud_backup_last_success_date";
 const LAST_SUCCESS_AT_KEY = "cloud_backup_last_success_at";
@@ -202,10 +203,53 @@ export async function getAccountStatus(accountId: string): Promise<AccountStatus
   return data.status ?? null;
 }
 
-// --- Sauvegardes ---
-async function getLatestRemoteBackup(accountId: string): Promise<CloudBackupUpdate | null> {
+// --- Boutiques ---
+export async function getCloudShops(session: CloudSession): Promise<Array<{ shop_id: string; name: string }>> {
   const { status, body } = await fetchJson(
-    `${await apiBase()}/api/backups/latest?account_id=${encodeURIComponent(accountId)}`,
+    `${await apiBase()}/api/shops?account_id=${encodeURIComponent(session.accountId)}`,
+    { method: "GET", headers: { ...(await authHeaders()) } },
+    { attempts: 2, timeoutMs: 8_000 },
+  );
+  if (status !== 200) return [];
+  const data = body as { shops?: Array<{ shop_id: string; name: string }> };
+  return data.shops ?? [];
+}
+
+export async function createCloudShop(
+  session: CloudSession,
+  name: string,
+): Promise<{ shop_id: string; name: string }> {
+  const { status, body } = await fetchJson(`${await apiBase()}/api/shops`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ account_id: session.accountId, name }),
+  });
+  const data = body as { ok?: boolean; shop?: { shop_id: string; name: string } };
+  if (status >= 400 || !data?.ok || !data.shop) {
+    throw new Error(safeError(body, "Création de la boutique impossible."));
+  }
+  return data.shop;
+}
+
+export async function renameCloudShop(
+  session: CloudSession,
+  shopId: string,
+  name: string,
+): Promise<void> {
+  const { status, body } = await fetchJson(`${await apiBase()}/api/shops/rename`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ account_id: session.accountId, shop_id: shopId, name }),
+  });
+  if (status >= 400) {
+    throw new Error(safeError(body, "Renommage de la boutique impossible."));
+  }
+}
+
+// --- Sauvegardes ---
+async function getLatestRemoteBackup(accountId: string, shopId: string): Promise<CloudBackupUpdate | null> {
+  const { status, body } = await fetchJson(
+    `${await apiBase()}/api/backups/latest?account_id=${encodeURIComponent(accountId)}&shop_id=${encodeURIComponent(shopId)}`,
     { method: "GET", headers: { ...(await authHeaders()) } },
     { attempts: 2, timeoutMs: 8_000 },
   );
@@ -224,9 +268,9 @@ async function getLatestRemoteBackup(accountId: string): Promise<CloudBackupUpda
   };
 }
 
-async function getBackupPayload(accountId: string, backupId: string): Promise<string> {
+async function getBackupPayload(accountId: string, shopId: string, backupId: string): Promise<string> {
   const { status, body } = await fetchJson(
-    `${await apiBase()}/api/backups/${encodeURIComponent(backupId)}?account_id=${encodeURIComponent(accountId)}`,
+    `${await apiBase()}/api/backups/${encodeURIComponent(backupId)}?account_id=${encodeURIComponent(accountId)}&shop_id=${encodeURIComponent(shopId)}`,
     { method: "GET", headers: { ...(await authHeaders()) } },
     { attempts: 3, timeoutMs: 15_000 },
   );
@@ -240,7 +284,8 @@ async function getBackupPayload(accountId: string, backupId: string): Promise<st
 export async function getRemoteBackupMetadata(
   session: CloudSession,
 ): Promise<CloudBackupUpdate | null> {
-  return getLatestRemoteBackup(session.accountId).catch(() => null);
+  const shopId = getCurrentShopId() ?? "";
+  return getLatestRemoteBackup(session.accountId, shopId).catch(() => null);
 }
 
 export async function getLocalDataAt(db: SQLiteDatabase): Promise<string | null> {
@@ -263,8 +308,9 @@ export async function getCloudBackupUpdate(
   db: SQLiteDatabase,
   session: CloudSession,
 ): Promise<CloudBackupUpdate | null> {
+  const shopId = getCurrentShopId() ?? "";
   const [remote, deviceId, lastRestoredBackupId, localDataAt] = await Promise.all([
-    getLatestRemoteBackup(session.accountId).catch(() => null),
+    getLatestRemoteBackup(session.accountId, shopId).catch(() => null),
     getDeviceId(),
     readState(db, LAST_RESTORED_BACKUP_ID_KEY),
     getLocalDataAt(db),
@@ -294,7 +340,7 @@ export async function restoreCloudBackup(
       `Cette copie vient d’une version plus récente (${update.appVersion}). Mettez MerchantHQ à jour.`,
     );
   }
-  const payload = await getBackupPayload(update.accountId, update.backupId);
+  const payload = await getBackupPayload(update.accountId, getCurrentShopId() ?? "", update.backupId);
   const restored = await restoreBackupPayload(db, JSON.parse(payload));
   await writeState(db, LAST_RESTORED_BACKUP_ID_KEY, update.backupId);
   await writeState(db, LAST_RESTORED_AT_KEY, update.snapshotAt);
@@ -379,10 +425,11 @@ export async function syncCloudBackup(
       }
     }
 
-    const [deviceId, backup, shopRow] = await Promise.all([
+    const [deviceId, backup, shopRow, shopId] = await Promise.all([
       getDeviceId(),
       createBackupPayload(db, "Sauvegarde automatique"),
       db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key = 'shop_name'"),
+      (async () => getCurrentShopId() ?? "")(),
     ]);
     const snapshotAt = new Date().toISOString();
 
@@ -391,6 +438,7 @@ export async function syncCloudBackup(
       headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify({
         account_id: session.accountId,
+        shop_id: shopId,
         device_id: deviceId,
         business_date: businessDate,
         snapshot_at: snapshotAt,
