@@ -125,6 +125,7 @@ export function canAccessScreen(
     home_dashboard: role === "employee" ? "orders.view" : "dashboard.full",
     home_caisse: "orders.view",
     home_boutique: "products.view",
+    calculator: "dashboard.full",
     statistics: "statistics.view",
     expenses: "expenses.manage",
     orders: "orders.view",
@@ -137,6 +138,7 @@ export function canAccessScreen(
     logs: "logs.view",
     tickets: "tickets.manage",
     settings: "backup.manage",
+    notifications: "logs.view",
   };
   return can(role, permissionByScreen[screen], custom);
 }

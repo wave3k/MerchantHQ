@@ -1,4 +1,9 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import Icon from "./Icon";
 import type { IconName } from "./Icon";
 
@@ -19,32 +24,35 @@ interface AppButtonProps {
   accessibilityHint?: string;
 }
 
-const tones = {
-  primary: {
-    background: colors.accent,
-    pressed: colors.accentDark,
-    border: colors.accent,
-    text: colors.accentInk,
-  },
-  secondary: {
-    background: colors.surfaceStrong,
-    pressed: colors.paper2,
-    border: colors.ruleStrong,
-    text: colors.ink,
-  },
-  danger: {
-    background: colors.errorSoft,
-    pressed: colors.errorPressed,
-    border: colors.errorBorder,
-    text: colors.error,
-  },
-  ghost: {
-    background: "transparent",
-    pressed: colors.paper2,
-    border: "transparent",
-    text: colors.ink2,
-  },
-} as const;
+function tonePalette(tone: Tone) {
+  const tones = {
+    primary: {
+      background: colors.accent,
+      pressed: colors.accentDark,
+      border: colors.accent,
+      text: colors.accentInk,
+    },
+    secondary: {
+      background: colors.surfaceStrong,
+      pressed: colors.paper2,
+      border: colors.ruleStrong,
+      text: colors.ink,
+    },
+    danger: {
+      background: colors.errorSoft,
+      pressed: colors.errorPressed,
+      border: colors.errorBorder,
+      text: colors.error,
+    },
+    ghost: {
+      background: "transparent",
+      pressed: colors.paper2,
+      border: "transparent",
+      text: colors.ink2,
+    },
+  } as const;
+  return tones[tone];
+}
 
 export function AppButton({
   label,
@@ -58,39 +66,55 @@ export function AppButton({
   accessibilityHint,
 }: AppButtonProps) {
   const styles = useThemedStyles(createStyles);
-  const palette = tones[tone];
+  const palette = tonePalette(tone);
   const translatedLabel = t(label);
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(
+    () => ({
+      transform: [{ scale: scale.get() }],
+    }),
+    [],
+  );
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={translatedLabel}
-      accessibilityHint={accessibilityHint}
-      accessibilityState={{ disabled, busy: loading }}
-      disabled={disabled || loading}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.base,
-        compact ? styles.compact : styles.regular,
-        fullWidth && styles.fullWidth,
-        {
-          backgroundColor: pressed ? palette.pressed : palette.background,
-          borderColor: palette.border,
-          opacity: disabled ? 0.48 : 1,
-          transform: [{ translateY: pressed ? 1 : 0 }],
-        },
-      ]}
-    >
-      {loading ? (
-        <ActivityIndicator size="small" color={palette.text} />
-      ) : (
-        <View style={styles.content}>
-          {icon ? <Icon name={icon} size={18} color={palette.text} /> : null}
-          <Text numberOfLines={1} style={[styles.label, { color: palette.text }]}>
-            {translatedLabel}
-          </Text>
-        </View>
-      )}
-    </Pressable>
+    <Animated.View style={animatedStyle}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={translatedLabel}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ disabled, busy: loading }}
+        disabled={disabled || loading}
+        onPress={onPress}
+        onPressIn={() => {
+          if (!disabled && !loading) {
+            scale.set(withTiming(0.97, { duration: 120 }));
+          }
+        }}
+        onPressOut={() => {
+          scale.set(withTiming(1, { duration: 120 }));
+        }}
+        style={({ pressed }) => [
+          styles.base,
+          compact ? styles.compact : styles.regular,
+          fullWidth && styles.fullWidth,
+          {
+            backgroundColor: pressed ? palette.pressed : palette.background,
+            borderColor: palette.border,
+            opacity: disabled ? 0.48 : 1,
+          },
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator size="small" color={palette.text} />
+        ) : (
+          <View style={styles.content}>
+            {icon ? <Icon name={icon} size={18} color={palette.text} /> : null}
+            <Text numberOfLines={1} style={[styles.label, { color: palette.text }]}>
+              {translatedLabel}
+            </Text>
+          </View>
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -98,17 +122,17 @@ function createStyles() {
   return StyleSheet.create({
   base: {
     alignItems: "center",
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     borderWidth: 1,
     justifyContent: "center",
     minHeight: 48,
   },
   regular: {
-    paddingHorizontal: space.md,
+    paddingHorizontal: space.lg,
   },
   compact: {
-    minHeight: 44,
-    paddingHorizontal: space.sm,
+    minHeight: 40,
+    paddingHorizontal: space.md,
   },
   fullWidth: {
     alignSelf: "stretch",

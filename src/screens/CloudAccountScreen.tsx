@@ -10,34 +10,39 @@ import {
 } from "react-native";
 
 import { AppButton } from "../components/AppButton";
-import { CashRegisterIcon } from "../components/CashRegisterIcon";
+import { AppLogoImage } from "../components/AppLogoImage";
 import { TextField } from "../components/TextField";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import { loginAccount, registerAccount } from "../data/cloudApi";
+import { isValidEmail } from "../domain/accounts";
 import { t } from "../i18n";
 import {useThemedStyles,  colors, fonts, radius, shadow, space } from "../theme";
 
 interface CloudAccountScreenProps {
   onDone: () => void;
+  onNeedsVerification: (email: string) => void;
 }
 
-export function CloudAccountScreen({ onDone }: CloudAccountScreenProps) {
+export function CloudAccountScreen({
+  onDone,
+  onNeedsVerification,
+}: CloudAccountScreenProps) {
   const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const stacked = width < 860;
   const [mode, setMode] = useState<"login" | "register">("login");
   const [shopName, setShopName] = useState("");
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   async function submit() {
-    const u = username.trim();
+    const e = email.trim();
     const p = password;
-    if (u.length < 3) {
-      setError("Le nom d’utilisateur doit contenir au moins 3 caractères.");
+    if (!isValidEmail(e)) {
+      setError("Indiquez une adresse e-mail valide.");
       return;
     }
     if (p.length < 8) {
@@ -57,10 +62,13 @@ export function CloudAccountScreen({ onDone }: CloudAccountScreenProps) {
     setBusy(true);
     setError("");
     try {
-      if (mode === "register") {
-        await registerAccount(u, p, shopName.trim());
-      } else {
-        await loginAccount(u, p);
+      const session =
+        mode === "register"
+          ? await registerAccount(e, p, shopName.trim())
+          : await loginAccount(e, p);
+      if (!session.emailVerified) {
+        onNeedsVerification(session.email);
+        return;
       }
       onDone();
     } catch (caught) {
@@ -86,9 +94,8 @@ export function CloudAccountScreen({ onDone }: CloudAccountScreenProps) {
       <View style={[styles.split, stacked && styles.splitStacked]}>
         <View style={[styles.brandPane, stacked && styles.brandPaneStacked]}>
           <View style={styles.brandCopy}>
-            <CashRegisterIcon
-              color={colors.accentInk}
-              detail={colors.inkSurfaceText}
+            <AppLogoImage
+              accessibilityLabel="MerchantHQ"
               size={84}
             />
             <Text style={styles.brand}>MerchantHQ</Text>
@@ -155,10 +162,11 @@ export function CloudAccountScreen({ onDone }: CloudAccountScreenProps) {
               <TextField
                 autoCapitalize="none"
                 autoCorrect={false}
-                label="Nom d’utilisateur"
-                onChangeText={setUsername}
-                placeholder="ex. marie.shop"
-                value={username}
+                keyboardType="email-address"
+                label="Adresse e-mail"
+                onChangeText={setEmail}
+                placeholder="ex. marie@boutique.com"
+                value={email}
               />
               <TextField
                 label="Mot de passe"
@@ -199,7 +207,7 @@ function createStyles() {
   splitStacked: { flexDirection: "column" },
   brandPane: {
     alignSelf: "stretch",
-    backgroundColor: colors.ink,
+    backgroundColor: colors.panelInk,
     flex: 1,
     padding: space.xxl,
   },
@@ -215,13 +223,13 @@ function createStyles() {
   rightContent: { flexGrow: 1 },
   brandCopy: { alignItems: "center", flex: 1, gap: space.md, justifyContent: "center" },
   brand: {
-    color: colors.accentInk,
+    color: colors.onPanelInk,
     fontFamily: fonts.display,
     fontSize: 38,
     letterSpacing: -1,
   },
   promise: {
-    color: colors.inkSurfaceText,
+    color: colors.onPanelInk,
     fontFamily: fonts.body,
     fontSize: 16,
     lineHeight: 24,
@@ -236,7 +244,7 @@ function createStyles() {
     width: 9,
   },
   offlineText: {
-    color: colors.inkSurfaceText,
+    color: colors.onPanelInk,
     fontFamily: fonts.mono,
     fontSize: 12,
     textTransform: "uppercase",

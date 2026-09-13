@@ -133,19 +133,47 @@ interface BadgeProps {
   tone?: "neutral" | "success" | "warning" | "danger" | "accent";
 }
 
-const badgeTones = {
-  neutral: { background: colors.paper2, text: colors.ink2 },
-  success: { background: colors.successSoft, text: colors.success },
-  warning: { background: colors.warningSoft, text: colors.warning },
-  danger: { background: colors.errorSoft, text: colors.error },
-  accent: { background: colors.accentSoft, text: colors.accentDark },
-};
+function badgePalette(tone: BadgeProps["tone"] = "neutral") {
+  const badgeTones = {
+    neutral: {
+      background: colors.paper2,
+      text: colors.ink2,
+      border: colors.rule,
+    },
+    success: {
+      background: colors.successSoft,
+      text: colors.success,
+      border: colors.success,
+    },
+    warning: {
+      background: colors.warningSoft,
+      text: colors.warning,
+      border: colors.warningBorder,
+    },
+    danger: {
+      background: colors.errorSoft,
+      text: colors.error,
+      border: colors.errorBorder,
+    },
+    accent: {
+      background: colors.accentSoft,
+      text: colors.accentDark,
+      border: colors.accent,
+    },
+  };
+  return badgeTones[tone];
+}
 
 export function Badge({ label, tone = "neutral" }: BadgeProps) {
   const styles = useThemedStyles(createStyles);
-  const palette = badgeTones[tone];
+  const palette = badgePalette(tone);
   return (
-    <View style={[styles.badge, { backgroundColor: palette.background }]}>
+    <View
+      style={[
+        styles.badge,
+        { backgroundColor: palette.background, borderColor: palette.border },
+      ]}
+    >
       <Text numberOfLines={1} style={[styles.badgeText, { color: palette.text }]}>
         {t(label)}
       </Text>
@@ -187,8 +215,8 @@ function createStyles() {
   title: {
     color: colors.ink,
     fontFamily: fonts.display,
-    fontSize: 30,
-    letterSpacing: -0.6,
+    fontSize: 32,
+    letterSpacing: -0.8,
   },
   description: {
     color: colors.muted,
@@ -201,12 +229,12 @@ function createStyles() {
     alignSelf: "stretch",
     backgroundColor: colors.surfaceStrong,
     borderColor: colors.rule,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
-    gap: space.xs,
-    minHeight: 48,
-    paddingHorizontal: space.sm,
+    gap: space.sm,
+    minHeight: 50,
+    paddingHorizontal: space.md,
   },
   searchInput: {
     color: colors.ink,
@@ -219,22 +247,24 @@ function createStyles() {
   empty: {
     alignItems: "center",
     alignSelf: "stretch",
+    backgroundColor: colors.surface,
     borderColor: colors.rule,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderStyle: "dashed",
     borderWidth: 1,
     gap: space.sm,
     justifyContent: "center",
-    minHeight: 260,
+    minHeight: 280,
     padding: space.xl,
   },
   emptyIcon: {
     alignItems: "center",
     backgroundColor: colors.accentSoft,
     borderRadius: radius.round,
-    height: 56,
+    height: 64,
     justifyContent: "center",
-    width: 56,
+    marginBottom: space.xs,
+    width: 64,
   },
   emptyTitle: {
     color: colors.ink,
@@ -252,12 +282,13 @@ function createStyles() {
   },
   badge: {
     alignSelf: "flex-start",
-    borderRadius: radius.sm,
-    paddingHorizontal: space.xs,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    paddingHorizontal: space.sm,
     paddingVertical: space.xxs,
   },
   badgeText: {
-    fontFamily: fonts.bodyMedium,
+    fontFamily: fonts.bodySemibold,
     fontSize: 12,
   },
 });

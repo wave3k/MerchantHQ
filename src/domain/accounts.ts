@@ -1,5 +1,11 @@
 import type { Role } from "../types";
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+export function isValidEmail(value: string): boolean {
+  return EMAIL_PATTERN.test(value.trim());
+}
+
 export function validateAccountPassword(
   role: Exclude<Role, "boss">,
   password: string,

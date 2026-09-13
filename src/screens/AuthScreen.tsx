@@ -1,5 +1,6 @@
 import * as SecureStore from "../data/secureStore";
 import type { SQLiteDatabase } from "expo-sqlite";
+import * as Haptics from "expo-haptics";
 import {
   ActivityIndicator,
   Alert,
@@ -26,18 +27,20 @@ import {
   verifyBossPassword,
 } from "../data/database";
 import { roleLabel } from "../domain/permissions";
+import { APP_VERSION } from "../appInfo";
 import {useThemedStyles,  colors, fonts, radius, shadow, space } from "../theme";
 import type { User } from "../types";
 import { t } from "../i18n";
-import { CashRegisterIcon } from "../components/CashRegisterIcon";
+import { AppLogoImage } from "../components/AppLogoImage";
 import { TranslatedText as Text } from "../components/TranslatedText";
 
 interface AuthScreenProps {
   db: SQLiteDatabase;
   onAuthenticated: (user: User) => void;
+  onLogout: () => void;
 }
 
-export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
+export function AuthScreen({ db, onAuthenticated, onLogout }: AuthScreenProps) {
   const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const stacked = width < 860;
@@ -47,7 +50,7 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [username, setUsername] = useState("boss");
+  const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [versionTaps, setVersionTaps] = useState(0);
@@ -109,6 +112,9 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
       }
       await SecureStore.setItemAsync("last_user_id", String(user.id));
       setPassword("");
+      void Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Success,
+      ).catch(() => {});
       onAuthenticated(user);
     } catch (caught) {
       setError(
@@ -217,9 +223,8 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
       <View style={[styles.split, stacked && styles.splitStacked]}>
         <View style={[styles.brandPane, stacked && styles.brandPaneStacked]}>
           <View style={styles.brandCopy}>
-            <CashRegisterIcon
-              color={colors.accentInk}
-              detail={colors.inkSurfaceText}
+            <AppLogoImage
+              accessibilityLabel="MerchantHQ"
               size={84}
             />
             <Text style={styles.brand}>MerchantHQ</Text>
@@ -429,6 +434,18 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
             </>
           )}
 
+          {!developerOpen ? (
+            <View style={styles.logout}>
+              <AppButton
+                fullWidth
+                icon="LogOut"
+                label="Se déconnecter du compte"
+                onPress={onLogout}
+                tone="secondary"
+              />
+            </View>
+          ) : null}
+
           {!setup && !developerOpen ? (
             <Pressable
               accessibilityLabel="Version de l’application"
@@ -441,7 +458,7 @@ export function AuthScreen({ db, onAuthenticated }: AuthScreenProps) {
               }
               style={styles.version}
             >
-              <Text style={styles.versionText}>Version 0.1.0</Text>
+              <Text style={styles.versionText}>Version {APP_VERSION}</Text>
             </Pressable>
           ) : null}
           </View>
@@ -466,15 +483,15 @@ function createStyles() {
   },
   brandPane: {
     alignSelf: "stretch",
-    backgroundColor: colors.ink,
+    backgroundColor: colors.panelInk,
     flex: 1,
     padding: space.xxl,
   },
   brandPaneStacked: {
     alignSelf: "auto",
     flex: 0,
-    gap: space.xl,
-    minHeight: 250,
+    gap: space.md,
+    minHeight: 170,
     padding: space.lg,
   },
   rightScroll: {
@@ -495,13 +512,13 @@ function createStyles() {
     justifyContent: "center",
   },
   brand: {
-    color: colors.accentInk,
+    color: colors.onPanelInk,
     fontFamily: fonts.display,
     fontSize: 38,
     letterSpacing: -1,
   },
   promise: {
-    color: colors.inkSurfaceText,
+    color: colors.onPanelInk,
     fontFamily: fonts.body,
     fontSize: 19,
     lineHeight: 29,
@@ -519,7 +536,7 @@ function createStyles() {
     width: 9,
   },
   offlineText: {
-    color: colors.inkSurfaceText,
+    color: colors.onPanelInk,
     fontFamily: fonts.mono,
     fontSize: 12,
     textTransform: "uppercase",
@@ -541,7 +558,8 @@ function createStyles() {
   cardStacked: {
     alignSelf: "center",
     margin: space.md,
-    width: "92%",
+    padding: space.lg,
+    width: "94%",
   },
   developerHeading: {
     alignItems: "center",
@@ -565,6 +583,9 @@ function createStyles() {
     justifyContent: "center",
     minHeight: 40,
     paddingTop: space.sm,
+  },
+  logout: {
+    marginTop: space.md,
   },
   versionText: {
     color: colors.faint,
@@ -655,7 +676,7 @@ function createStyles() {
     fontSize: 19,
   },
   avatarTextSelected: {
-    color: colors.accentInk,
+    color: colors.onPanelInk,
   },
   userCopy: {
     flex: 1,

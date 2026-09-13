@@ -34,7 +34,7 @@ type LegacyUserInput = UserInput & { name: string };
 const emptyDraft: LegacyUserInput = {
   employeeId: 0,
   name: "",
-  username: "",
+  email: "",
   role: "employee",
   password: "",
 };
@@ -73,8 +73,8 @@ export function LegacyTeamScreen({ db, user }: TeamScreenProps) {
       setError("Indiquez le nom complet de l’utilisateur.");
       return;
     }
-    if (draft.username.trim().length < 3) {
-      setError("L’identifiant doit contenir au moins 3 caractères.");
+    if (draft.email.trim().length < 3) {
+      setError("L'identifiant doit contenir au moins 3 caractères.");
       return;
     }
     if (draft.password.length < 4) {
@@ -193,7 +193,7 @@ export function LegacyTeamScreen({ db, user }: TeamScreenProps) {
                 <Text numberOfLines={1} style={styles.name}>
                   {member.name}
                 </Text>
-                <Text style={styles.username}>@{member.username}</Text>
+                <Text style={styles.username}>{member.email}</Text>
               </View>
               <View style={styles.footer}>
                 <Badge
@@ -211,7 +211,7 @@ export function LegacyTeamScreen({ db, user }: TeamScreenProps) {
         onClose={() => setOpen(false)}
         subtitle={
           selected
-            ? `Identifiant : @${selected.username}`
+            ? `E-mail : ${selected.email}`
             : "Le rôle détermine les écrans et les actions disponibles."
         }
         title={selected ? selected.name : "Nouveau compte"}
@@ -255,11 +255,11 @@ export function LegacyTeamScreen({ db, user }: TeamScreenProps) {
               autoCapitalize="none"
               autoCorrect={false}
               label="Identifiant"
-              onChangeText={(username) =>
-                setDraft((value) => ({ ...value, username }))
+              onChangeText={(email) =>
+                setDraft((value) => ({ ...value, email }))
               }
               placeholder="patrick"
-              value={draft.username}
+              value={draft.email}
             />
             <Text style={styles.formLabel}>Rôle</Text>
             <View style={styles.roles}>

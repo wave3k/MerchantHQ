@@ -8,6 +8,9 @@
     "head_sampling_rate": 1
   },
   "vars": {
-    "ENVIRONMENT": "production"
+    "ENVIRONMENT": "production",
+    "RESEND_FROM": "MerchantHQ <hello@support.hqmerchant.xyz>",
+    "RESEND_AUDIENCE_ID": "18736ce0-919e-4238-b575-c2cb41b0bcb5",
+    "ALLOWED_ORIGINS": "https://hqmerchant.xyz,https://www.hqmerchant.xyz,https://admin.hqmerchant.xyz,http://localhost:8081,http://localhost:19006"
   }
 }

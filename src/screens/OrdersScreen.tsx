@@ -1,6 +1,7 @@
 /* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V5 */
 /* Hallmark · macrostructure: Split Studio · tone: utilitaire · anchor hue: cobalt */
 import type { SQLiteDatabase } from "expo-sqlite";
+import * as Haptics from "expo-haptics";
 import {
   ActivityIndicator,
   Alert,
@@ -28,6 +29,7 @@ import {
   saveClient,
 } from "../data/database";
 import { refreshOperationalNotifications } from "../data/notifications";
+import { syncCloudBackup } from "../data/cloudApi";
 import { isAutoPrintEnabled, printOrderTicket } from "../data/tickets";
 import { formatDateTime, formatMoney, normalizePhone } from "../domain/format";
 import {
@@ -37,6 +39,7 @@ import {
   tracksStock,
 } from "../domain/stock";
 import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
+import { getSession } from "../data/cloudSession";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import type {
   CartLine,
@@ -279,14 +282,21 @@ export function OrdersScreen({
         selectedEmployee,
         user,
       );
+      void Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Success,
+      ).catch(() => {});
       setCart([]);
       setCheckoutOpen(false);
       setSelectedClient(null);
       setPayment("cash");
       await load();
       void refreshOperationalNotifications(db).catch(() => undefined);
+      // Sauvegarde cloud après la vente (immédiate pour les plans « realtime »).
+      void syncCloudBackup(db).catch(() => undefined);
       let printWarning = "";
-      if (await isAutoPrintEnabled(db)) {
+      const session = await getSession().catch(() => null);
+      const planAllowsTickets = session?.subscriptionPermissions?.tickets !== false;
+      if (planAllowsTickets && (await isAutoPrintEnabled(db))) {
         try {
           await printOrderTicket(db, order.id);
         } catch {
@@ -456,9 +466,10 @@ export function OrdersScreen({
           />
           {categories.length > 0 ? (
             <ScrollView
-              horizontal
               contentContainerStyle={styles.categoryTiles}
+              horizontal
               showsHorizontalScrollIndicator={false}
+              style={styles.categoryScroll}
             >
               <Pressable
                 accessibilityRole="button"
@@ -1019,6 +1030,10 @@ function createStyles() {
   categoryTiles: {
     gap: space.xs,
     paddingBottom: space.xxs,
+  },
+  categoryScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
   },
   categoryTile: {
     alignItems: "center",

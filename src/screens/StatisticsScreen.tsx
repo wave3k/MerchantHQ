@@ -396,8 +396,8 @@ function createStyles() {
     paddingHorizontal: space.sm,
   },
   periodActive: {
-    backgroundColor: colors.ink,
-    borderColor: colors.ink,
+    backgroundColor: colors.panelInk,
+    borderColor: colors.panelInk,
   },
   periodText: {
     color: colors.ink2,
@@ -405,7 +405,7 @@ function createStyles() {
     fontSize: 13,
   },
   periodTextActive: {
-    color: colors.surfaceStrong,
+    color: colors.onPanelInk,
   },
   loading: {
     alignItems: "center",
@@ -421,7 +421,7 @@ function createStyles() {
     flexDirection: "column",
   },
   revenueBlock: {
-    backgroundColor: colors.ink,
+    backgroundColor: colors.panelInk,
     borderRadius: radius.md,
     flex: 1.15,
     justifyContent: "center",
@@ -429,20 +429,20 @@ function createStyles() {
     padding: space.lg,
   },
   revenueLabel: {
-    color: colors.inkSurfaceText,
+    color: colors.onPanelInk,
     fontFamily: fonts.bodyMedium,
     fontSize: 14,
     opacity: 0.86,
   },
   revenue: {
-    color: colors.surfaceStrong,
+    color: colors.onPanelInk,
     fontFamily: fonts.display,
     fontSize: 44,
     letterSpacing: -1.4,
     marginVertical: space.xs,
   },
   revenueContext: {
-    color: colors.inkSurfaceText,
+    color: colors.onPanelInk,
     fontFamily: fonts.body,
     fontSize: 14,
     lineHeight: 21,

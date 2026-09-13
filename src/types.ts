@@ -13,6 +13,7 @@ export type ScreenKey =
   | "home_dashboard"
   | "statistics"
   | "expenses"
+  | "calculator"
   | "home_caisse"
   | "orders"
   | "clients"
@@ -24,7 +25,20 @@ export type ScreenKey =
   | "team"
   | "permissions"
   | "logs"
-  | "settings";
+  | "settings"
+  | "notifications";
+
+export interface NotificationLog {
+  id: number;
+  shop_id: string;
+  type: string;
+  title: string;
+  body: string;
+  scheduled_for: string | null;
+  delivered_at: string | null;
+  read_at: string | null;
+  created_at: string;
+}
 
 export type PaymentMethod = "cash" | "mobile_money" | "card";
 export type AppointmentStatus = "scheduled" | "completed" | "cancelled";
@@ -37,7 +51,7 @@ export type StatisticsPeriod = "today" | "week" | "month";
 export interface User {
   id: number;
   name: string;
-  username: string;
+  email: string;
   role: Role;
   employee_id: number | null;
   permissions: string | null;
@@ -272,7 +286,7 @@ export interface ClientInput {
 
 export interface UserInput {
   employeeId: number;
-  username: string;
+  email: string;
   role: Exclude<Role, "boss">;
   password: string;
   permissions?: string | null;

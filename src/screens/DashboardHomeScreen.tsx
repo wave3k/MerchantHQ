@@ -7,6 +7,7 @@ import {
 } from "react-native";
 import { Page } from "../components/Page";
 import { LiveClock } from "../components/LiveClock";
+import { DailySummary } from "../components/DailySummary";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import { userCanAccessScreen } from "../domain/permissions";
 import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
@@ -19,13 +20,19 @@ interface DashboardHomeScreenProps {
 }
 
 export function DashboardHomeScreen({
+  db,
   user,
   onNavigate,
 }: DashboardHomeScreenProps) {
   const styles = useThemedStyles(createStyles);
   return (
     <Page
-      action={<LiveClock />}
+      action={
+        <View style={styles.headerActions}>
+          <DailySummary db={db} />
+          <LiveClock />
+        </View>
+      }
       description="Supervisez les performances de votre entreprise."
       title="Dashboard"
     >
@@ -37,6 +44,29 @@ export function DashboardHomeScreen({
           </Text>
         </View>
         <View style={styles.quickActions}>
+          {userCanAccessScreen(user, "calculator") ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onNavigate("calculator")}
+              style={({ pressed }) => [
+                styles.quickAction,
+                pressed && styles.quickActionPressed,
+              ]}
+            >
+              <View style={styles.actionIcon}>
+                <Icon color={colors.accent} name="Calculator" size={23} />
+              </View>
+              <View style={styles.actionCopy}>
+                <Text numberOfLines={1} style={styles.actionLabel}>
+                  Calculatrice
+                </Text>
+                <Text numberOfLines={2} style={styles.actionDescription}>
+                  Calculs rapides, taxes, remises et marges.
+                </Text>
+              </View>
+              <Icon color={colors.muted} name="ChevronRight" size={20} />
+            </Pressable>
+          ) : null}
           {userCanAccessScreen(user, "statistics") ? (
             <Pressable
               accessibilityRole="button"
@@ -103,6 +133,11 @@ export function DashboardHomeScreen({
 
 function createStyles() {
   return StyleSheet.create({
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
   actionsBand: {
     borderBottomColor: colors.rule,
     borderBottomWidth: 1,

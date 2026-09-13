@@ -7,6 +7,7 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
+import { useState } from "react";
 
 import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { t } from "../i18n";
@@ -18,25 +19,63 @@ interface TextFieldProps extends TextInputProps {
   containerStyle?: StyleProp<ViewStyle>;
 }
 
+// Chaque clavier natif a son équivalent web : on déduit inputMode depuis
+// keyboardType pour que les navigateurs affichent aussi le bon clavier.
+function inputModeFor(keyboardType?: TextInputProps["keyboardType"]): TextInputProps["inputMode"] {
+  switch (keyboardType) {
+    case "number-pad":
+    case "decimal-pad":
+    case "numeric":
+      return "decimal";
+    case "phone-pad":
+      return "tel";
+    case "email-address":
+      return "email";
+    case "url":
+      return "url";
+    default:
+      return undefined;
+  }
+}
+
 export function TextField({
   label,
   error,
   helper,
   containerStyle,
   style,
+  onFocus,
+  onBlur,
+  keyboardType,
   ...props
 }: TextFieldProps) {
   const styles = useThemedStyles(createStyles);
+  const [focused, setFocused] = useState(false);
   return (
     <View style={[styles.wrapper, containerStyle]}>
       <Text style={styles.label}>{t(label)}</Text>
       <TextInput
         accessibilityLabel={t(label)}
         accessibilityState={{ disabled: props.editable === false }}
-        style={[styles.input, error ? styles.inputError : null, style]}
+        onBlur={(e) => {
+          setFocused(false);
+          onBlur?.(e);
+        }}
+        onFocus={(e) => {
+          setFocused(true);
+          onFocus?.(e);
+        }}
         placeholderTextColor={colors.faint}
         selectionColor={colors.accent}
+        style={[
+          styles.input,
+          focused && !error ? styles.inputFocused : null,
+          error ? styles.inputError : null,
+          style,
+        ]}
         {...props}
+        keyboardType={keyboardType}
+        inputMode={inputModeFor(keyboardType)}
         placeholder={props.placeholder ? t(props.placeholder) : undefined}
       />
       <Text
@@ -64,14 +103,18 @@ function createStyles() {
   input: {
     backgroundColor: colors.surfaceStrong,
     borderColor: colors.ruleStrong,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     borderWidth: 1,
     color: colors.ink,
     fontFamily: fonts.body,
     fontSize: 16,
     minHeight: 48,
-    paddingHorizontal: space.sm,
+    paddingHorizontal: space.md,
     paddingVertical: space.xs,
+  },
+  inputFocused: {
+    borderColor: colors.accent,
+    borderWidth: 1.5,
   },
   inputError: {
     borderColor: colors.error,

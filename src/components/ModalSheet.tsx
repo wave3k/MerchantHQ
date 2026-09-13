@@ -34,7 +34,7 @@ export function ModalSheet({
   const styles = useThemedStyles(createStyles);
   return (
     <Modal
-      animationType="fade"
+      animationType="none"
       transparent
       visible={visible}
       onRequestClose={onClose}
@@ -110,12 +110,14 @@ function createStyles() {
   },
   header: {
     alignItems: "flex-start",
+    backgroundColor: colors.surface,
     borderBottomColor: colors.rule,
     borderBottomWidth: 1,
     flexDirection: "row",
     gap: space.md,
     justifyContent: "space-between",
     padding: space.lg,
+    paddingBottom: space.md,
   },
   titleGroup: {
     flex: 1,
@@ -125,6 +127,7 @@ function createStyles() {
     color: colors.ink,
     fontFamily: fonts.display,
     fontSize: 22,
+    letterSpacing: -0.4,
   },
   subtitle: {
     color: colors.muted,
@@ -134,13 +137,14 @@ function createStyles() {
   },
   close: {
     alignItems: "center",
-    borderRadius: radius.sm,
-    height: 44,
+    backgroundColor: colors.paper2,
+    borderRadius: radius.md,
+    height: 40,
     justifyContent: "center",
-    width: 44,
+    width: 40,
   },
   closePressed: {
-    backgroundColor: colors.paper2,
+    backgroundColor: colors.rule,
   },
   content: {
     gap: space.md,

@@ -14,7 +14,15 @@ import {
   listExpenses,
   saveExpense,
 } from "../data/database";
-import { formatDateTime, formatMoney } from "../domain/format";
+import {
+  convertSecondaryToPrimary,
+  currencySymbolsPublic,
+  formatDateTime,
+  formatMoney,
+  getPrimaryCurrency,
+  getSecondaryCurrency,
+  type CurrencyCode,
+} from "../domain/format";
 import { userCan } from "../domain/permissions";
 import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
 import { TranslatedText as Text } from "../components/TranslatedText";
@@ -40,6 +48,10 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
   const [newCategory, setNewCategory] = useState("");
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
+  const [expenseCurrency, setExpenseCurrency] = useState<CurrencyCode>(
+    getPrimaryCurrency(),
+  );
 
   const canManage = userCan(user, "expenses.manage");
 
@@ -77,6 +89,7 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
 
   function openCreate() {
     setSelectedCategoryId(categories[0]?.id ?? null);
+    setExpenseCurrency(getPrimaryCurrency());
     setAmountText("");
     setNotes("");
     setNewCategory("");
@@ -113,11 +126,17 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
   }
 
   async function submitExpense() {
-    const amount = Number.parseInt(amountText.replace(/\s/g, ""), 10);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setFormError("Indiquez un montant valide en francs congolais.");
+    const enteredAmount = Number.parseFloat(
+      amountText.replace(/\s/g, "").replace(",", "."),
+    );
+    if (!Number.isFinite(enteredAmount) || enteredAmount <= 0) {
+      setFormError(`Indiquez un montant valide en ${currencyLabel(expenseCurrency)}.`);
       return;
     }
+    const amount =
+      expenseCurrency === getPrimaryCurrency()
+        ? Math.round(enteredAmount)
+        : Math.round(convertSecondaryToPrimary(enteredAmount));
     setBusy(true);
     try {
       const input: ExpenseInput = {
@@ -142,33 +161,23 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
     }
   }
 
-  function confirmDelete(expense: Expense) {
-    Alert.alert(
-      "Retirer la dépense",
-      `Retirer la dépense de ${formatMoney(expense.amount)} (${expense.category_name}) ?`,
-      [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Retirer",
-          style: "destructive",
-          onPress: () => {
-            void (async () => {
-              try {
-                await deleteExpense(db, expense.id, user);
-                await load();
-              } catch (caught) {
-                Alert.alert(
-                  "Suppression impossible",
-                  caught instanceof Error
-                    ? caught.message
-                    : "La dépense n’a pas été retirée.",
-                );
-              }
-            })();
-          },
-        },
-      ],
-    );
+  async function removeSelectedExpense() {
+    if (!expenseToDelete) return;
+    setBusy(true);
+    try {
+      await deleteExpense(db, expenseToDelete.id, user);
+      setExpenseToDelete(null);
+      await load();
+    } catch (caught) {
+      Alert.alert(
+        "Suppression impossible",
+        caught instanceof Error
+          ? caught.message
+          : "La dépense n’a pas été retirée.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -258,7 +267,7 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
                         accessibilityRole="button"
                         accessibilityLabel={`Retirer la dépense de ${expense.category_name}`}
                         hitSlop={8}
-                        onPress={() => confirmDelete(expense)}
+                        onPress={() => setExpenseToDelete(expense)}
                         style={({ pressed }) => [
                           styles.deleteButton,
                           pressed && styles.deleteButtonPressed,
@@ -269,7 +278,7 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
                     ) : null}
                   </View>
                   <Text numberOfLines={2} style={styles.expenseNotes}>
-                    {expense.notes || "Sans note"}
+                    {expense.notes?.trim() || expense.category_name}
                   </Text>
                   <Text style={styles.expenseMeta}>
                     {formatDateTime(expense.created_at)} · {expense.created_by_name}
@@ -349,12 +358,54 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
           </View>
         </View>
         <TextField
-          keyboardType="number-pad"
-          label="Montant (FC)"
+          keyboardType="decimal-pad"
+          label={`Montant (${currencyLabel(expenseCurrency)}) — principal : ${currencyLabel(getPrimaryCurrency())}`}
           onChangeText={setAmountText}
           placeholder="15000"
           value={amountText}
         />
+        <View style={styles.currencyGroup}>
+          <Text style={styles.categoryLabel}>Devise de saisie</Text>
+          <View style={styles.categoryChoices}>
+            {Array.from(
+              new Set(
+                [getPrimaryCurrency(), getSecondaryCurrency()].filter(
+                  (currency): currency is CurrencyCode => Boolean(currency),
+                ),
+              ),
+            )
+              .map((currency) => {
+                const selected = expenseCurrency === currency;
+                return (
+                  <Pressable
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    key={currency}
+                    onPress={() => setExpenseCurrency(currency)}
+                    style={({ pressed }) => [
+                      styles.categoryChoice,
+                      selected && styles.categoryChoiceSelected,
+                      pressed && styles.categoryChoicePressed,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.categoryChoiceText,
+                        selected && styles.categoryChoiceTextSelected,
+                      ]}
+                    >
+                      {currencyLabel(currency)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+          </View>
+          {expenseCurrency !== getPrimaryCurrency() ? (
+            <Text style={styles.currencyHint}>
+              Le montant sera converti en {currencyLabel(getPrimaryCurrency())} pour les résumés.
+            </Text>
+          ) : null}
+        </View>
         <TextField
           label="Note (facultatif)"
           onChangeText={setNotes}
@@ -371,8 +422,41 @@ export function ExpensesScreen({ db, user }: ExpensesScreenProps) {
           />
         </View>
       </ModalSheet>
+
+      <ModalSheet
+        onClose={() => setExpenseToDelete(null)}
+        subtitle={
+          expenseToDelete
+            ? `${formatMoney(expenseToDelete.amount)} · ${expenseToDelete.category_name}`
+            : ""
+        }
+        title="Supprimer cette dépense ?"
+        visible={expenseToDelete !== null}
+      >
+        <Text style={styles.deleteConfirmation}>
+          Cette action retirera définitivement la dépense de l’historique.
+        </Text>
+        <View style={styles.modalActions}>
+          <AppButton
+            icon="Trash2"
+            label="Supprimer la dépense"
+            loading={busy}
+            onPress={() => void removeSelectedExpense()}
+            tone="danger"
+          />
+          <AppButton
+            label="Annuler"
+            onPress={() => setExpenseToDelete(null)}
+            tone="secondary"
+          />
+        </View>
+      </ModalSheet>
     </Page>
   );
+}
+
+function currencyLabel(currency: CurrencyCode): string {
+  return currencySymbolsPublic[currency];
 }
 
 function createStyles() {
@@ -506,6 +590,15 @@ function createStyles() {
     gap: space.xxs,
     marginTop: space.sm,
   },
+  currencyGroup: {
+    gap: space.xxs,
+    marginTop: space.sm,
+  },
+  currencyHint: {
+    color: colors.muted,
+    fontFamily: fonts.body,
+    fontSize: 12,
+  },
   newCategoryRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -539,6 +632,12 @@ function createStyles() {
     color: colors.error,
     fontFamily: fonts.body,
     fontSize: 13,
+  },
+  deleteConfirmation: {
+    color: colors.ink,
+    fontFamily: fonts.body,
+    fontSize: 15,
+    lineHeight: 22,
   },
   modalActions: {
     gap: space.sm,

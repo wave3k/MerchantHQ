@@ -8,7 +8,11 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "hono": "^4.7.0"
+    "@react-email/components": "^1.0.12",
+    "@react-email/render": "^2.1.0",
+    "hono": "^4.7.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250820.0",

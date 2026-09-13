@@ -55,7 +55,7 @@ export function AccountPermissionsScreen({
   const [users, setUsers] = useState<User[]>([]);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [employeeId, setEmployeeId] = useState<number>(0);
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Exclude<Role, "boss">>("employee");
   const [customPermissions, setCustomPermissions] = useState<Set<string> | null>(
@@ -148,7 +148,7 @@ export function AccountPermissionsScreen({
       setError("Choisissez l’employé qui utilisera ce compte.");
       return;
     }
-    if (username.trim().length < 3) {
+    if (email.trim().length < 3) {
       setError("Le nom de connexion doit contenir au moins 3 caractères.");
       return;
     }
@@ -159,7 +159,7 @@ export function AccountPermissionsScreen({
     }
     const input: UserInput = {
       employeeId,
-      username,
+      email,
       role,
       password,
       permissions: JSON.stringify([...selectedPermissions]),
@@ -200,7 +200,7 @@ export function AccountPermissionsScreen({
       }
       description={
         editingUser
-          ? `Compte @${editingUser.username} · ${roleLabel[editingUser.role]}`
+          ? `Compte ${editingUser.email} · ${roleLabel[editingUser.role]}`
           : "Choisissez le type de compte, puis ajustez les permissions si besoin."
       }
       title={editingUser ? editingUser.name : "Créer un compte"}
@@ -255,13 +255,13 @@ export function AccountPermissionsScreen({
               </ScrollView>
             )}
             <View style={styles.fields}>
-              <TextField
+<TextField
                 autoCapitalize="none"
                 autoCorrect={false}
                 label="Nom de connexion"
-                onChangeText={setUsername}
+                onChangeText={setEmail}
                 placeholder="patrick"
-                value={username}
+                value={email}
               />
               <TextField
                 error={error || undefined}

@@ -26,3 +26,15 @@ test("formatMoney affiche la devise principale et la devise secondaire", () => {
   expect(value.includes("FC")).toBe(true);
   expect(value.includes("$")).toBe(true);
 });
+
+test("convertit correctement quand USD est la devise principale", () => {
+  configureFormatting({
+    primary: "USD",
+    secondary: "CDF",
+    rate: 2800,
+    language: "fr",
+  });
+  const value = formatMoney(10);
+  expect(value.includes("$10,00")).toBe(true);
+  expect(value.includes("28") && value.includes("FC")).toBe(true);
+});

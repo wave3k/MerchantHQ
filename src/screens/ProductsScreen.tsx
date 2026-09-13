@@ -3,6 +3,7 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import {
   Alert,
+  FlatList,
   Pressable,
   StyleSheet,
   View,
@@ -25,7 +26,15 @@ import {
   saveProduct,
 } from "../data/database";
 import { notifyLowStockChanges } from "../data/notifications";
-import { formatMoney } from "../domain/format";
+import {
+  convertPrimaryToSecondary,
+  convertSecondaryToPrimary,
+  formatMoney,
+  getPrimaryCurrency,
+  getSecondaryCurrency,
+  getSecondaryRate,
+  currencySymbolsPublic,
+} from "../domain/format";
 import { userCan } from "../domain/permissions";
 import { isLowStock, tracksStock as productTracksStock } from "../domain/stock";
 import {useThemedStyles,  colors, fonts, radius, space } from "../theme";
@@ -60,6 +69,7 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
   const [editing, setEditing] = useState<Product | null>(null);
   const [draft, setDraft] = useState<ProductInput>(emptyDraft);
   const [priceText, setPriceText] = useState("");
+  const [priceSecondaryText, setPriceSecondaryText] = useState("");
   const [stockText, setStockText] = useState("0");
   const [thresholdText, setThresholdText] = useState("5");
   const [stockReason, setStockReason] = useState("");
@@ -106,6 +116,7 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
     setDraft(emptyDraft);
     setNewCategory("");
     setPriceText("");
+    setPriceSecondaryText("");
     setStockText("0");
     setThresholdText("5");
     setFormError("");
@@ -124,6 +135,12 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
       tracksStock: Boolean(product.tracks_stock),
     });
     setPriceText(String(product.price));
+    const secondary = getSecondaryCurrency();
+    setPriceSecondaryText(
+      secondary
+        ? String(Math.round(convertPrimaryToSecondary(product.price)))
+        : "",
+    );
     setStockText(String(product.stock));
     setThresholdText(String(product.low_stock_threshold));
     setFormError("");
@@ -162,7 +179,18 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
   }
 
   async function submitProduct() {
-    const price = Number.parseInt(priceText.replace(/\s/g, ""), 10);
+    let price = Number.parseFloat(priceText.replace(/\s/g, "").replace(",", "."));
+    if (!Number.isFinite(price) || price < 0) {
+      const secondary = getSecondaryCurrency();
+      if (secondary) {
+        const secondaryValue = Number.parseFloat(
+          priceSecondaryText.replace(/\s/g, "").replace(",", "."),
+        );
+        if (Number.isFinite(secondaryValue) && secondaryValue >= 0) {
+          price = Math.round(convertSecondaryToPrimary(secondaryValue));
+        }
+      }
+    }
     const initialStock = Number.parseInt(stockText, 10);
     const threshold = Number.parseInt(thresholdText, 10);
     if (draft.name.trim().length < 2) {
@@ -170,7 +198,7 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
       return;
     }
     if (!Number.isFinite(price) || price < 0) {
-      setFormError("Indiquez un prix valide en francs congolais.");
+      setFormError("Indiquez un prix valide.");
       return;
     }
     if (
@@ -199,11 +227,46 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
       setEditorOpen(false);
       await load();
       void notifyLowStockChanges(db).catch(() => undefined);
+      Alert.alert(
+        editing ? "Produit modifié" : "Produit ajouté",
+        editing
+          ? `${draft.name.trim()} a été mis à jour.`
+          : `${draft.name.trim()} a été ajouté au catalogue.`,
+      );
     } catch (caught) {
       setFormError(
         caught instanceof Error
           ? caught.message
           : "Le produit n’a pas pu être enregistré.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function duplicateProduct(product: Product) {
+    setBusy(true);
+    try {
+      await saveProduct(
+        db,
+        {
+          name: `${product.name} (copie)`,
+          sku: undefined,
+          category: product.category,
+          price: product.price,
+          stock: 0,
+          lowStockThreshold: product.low_stock_threshold,
+          tracksStock: Boolean(product.tracks_stock),
+        },
+        user,
+      );
+      await load();
+      void notifyLowStockChanges(db).catch(() => undefined);
+      Alert.alert("Produit dupliqué", `${product.name} a été dupliqué.`);
+    } catch (caught) {
+      Alert.alert(
+        "Duplication impossible",
+        caught instanceof Error ? caught.message : "Le produit n’a pas pu être dupliqué.",
       );
     } finally {
       setBusy(false);
@@ -415,29 +478,52 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
                   <Text style={styles.editHint}>
                     {canManage ? "Modifier la fiche" : "Consultation"}
                   </Text>
-                  {canAdjust && tracksStock ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Ajuster le stock de ${product.name}`}
-                      hitSlop={8}
-                      onPress={(event) => {
-                        event.stopPropagation();
-                        openStock(product);
-                      }}
-                      style={({ pressed }) => [
-                        styles.stockButton,
-                        pressed && styles.stockButtonPressed,
-                      ]}
-                    >
-                      <Icon
-                        name="Layers"
-                        size={20}
-                        color={colors.accent}
-                      />
-                      <Text style={styles.stockButtonText}>Ajuster le stock</Text>
-                    </Pressable>
-                  ) : tracksStock ? (
-                    <View style={styles.lockedStock}>
+                  <View style={styles.productActions}>
+                    {canManage ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Dupliquer ${product.name}`}
+                        hitSlop={8}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          void duplicateProduct(product);
+                        }}
+                        style={({ pressed }) => [
+                          styles.stockButton,
+                          pressed && styles.stockButtonPressed,
+                        ]}
+                      >
+                        <Icon
+                          name="Copy"
+                          size={18}
+                          color={colors.accent}
+                        />
+                        <Text style={styles.stockButtonText}>Dupliquer</Text>
+                      </Pressable>
+                    ) : null}
+                    {canAdjust && tracksStock ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Ajuster le stock de ${product.name}`}
+                        hitSlop={8}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          openStock(product);
+                        }}
+                        style={({ pressed }) => [
+                          styles.stockButton,
+                          pressed && styles.stockButtonPressed,
+                        ]}
+                      >
+                        <Icon
+                          name="Layers"
+                          size={20}
+                          color={colors.accent}
+                        />
+                        <Text style={styles.stockButtonText}>Ajuster le stock</Text>
+                      </Pressable>
+                    ) : tracksStock ? (
+                      <View style={styles.lockedStock}>
                       <Icon
                         name="Lock"
                         size={17}
@@ -455,6 +541,7 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
                       <Text style={styles.lockedStockText}>Stock illimité</Text>
                     </View>
                   )}
+                  </View>
                 </View>
               </Pressable>
             );
@@ -552,12 +639,21 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
           </View>
         </View>
         <TextField
-          keyboardType="number-pad"
-          label="Prix de vente (FC)"
+          keyboardType="decimal-pad"
+          label={`Prix de vente (${currencySymbolsPublic[getPrimaryCurrency()]})`}
           onChangeText={setPriceText}
           placeholder="18000"
           value={priceText}
         />
+        {getSecondaryCurrency() && getSecondaryRate() > 0 ? (
+          <TextField
+            keyboardType="decimal-pad"
+            label={`Prix en ${getSecondaryCurrency()} (${currencySymbolsPublic[getSecondaryCurrency() ?? "USD"]})`}
+            onChangeText={setPriceSecondaryText}
+            placeholder="6,4"
+            value={priceSecondaryText}
+          />
+        ) : null}
         <View style={styles.stockMode}>
           <View style={styles.stockModeCopy}>
             <Text style={styles.stockModeTitle}>Gestion du stock</Text>
@@ -799,6 +895,13 @@ function createStyles() {
     flexDirection: "row",
     justifyContent: "space-between",
     minHeight: 44,
+  },
+  productActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space.xs,
+    justifyContent: "flex-end",
   },
   editHint: {
     color: colors.muted,

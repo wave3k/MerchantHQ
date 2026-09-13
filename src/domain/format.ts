@@ -33,6 +33,49 @@ export function locale(): string {
   return appLanguage === "en" ? "en-US" : "fr-FR";
 }
 
+export function getPrimaryCurrency(): CurrencyCode {
+  return primaryCurrency;
+}
+
+export function getSecondaryCurrency(): CurrencyCode | null {
+  return secondaryCurrency;
+}
+
+export function getSecondaryRate(): number {
+  return secondaryRate;
+}
+
+// For a CDF/foreign-currency pair, the rate is conventionally the number of
+// CDF for one unit of the foreign currency (for example, 1 USD = 2800 CDF).
+export function convertPrimaryToSecondary(value: number): number {
+  if (!secondaryCurrency || secondaryRate <= 0) return value;
+  if (primaryCurrency === "CDF" && secondaryCurrency !== "CDF") {
+    return value / secondaryRate;
+  }
+  if (primaryCurrency !== "CDF" && secondaryCurrency === "CDF") {
+    return value * secondaryRate;
+  }
+  return value / secondaryRate;
+}
+
+export function convertSecondaryToPrimary(value: number): number {
+  if (!secondaryCurrency || secondaryRate <= 0) return value;
+  if (primaryCurrency === "CDF" && secondaryCurrency !== "CDF") {
+    return value * secondaryRate;
+  }
+  if (primaryCurrency !== "CDF" && secondaryCurrency === "CDF") {
+    return value / secondaryRate;
+  }
+  return value * secondaryRate;
+}
+
+export const currencySymbolsPublic: Record<CurrencyCode, string> =
+  currencySymbols;
+
+export function formatCurrencyValue(value: number, currency: CurrencyCode): string {
+  return formatCurrency(value, currency);
+}
+
 function formatCurrency(value: number, currency: CurrencyCode): string {
   const decimals = currency === "CDF" ? 0 : 2;
   const amount = new Intl.NumberFormat(locale(), {
@@ -47,7 +90,7 @@ function formatCurrency(value: number, currency: CurrencyCode): string {
 export function formatMoney(value: number): string {
   const main = formatCurrency(value, primaryCurrency);
   if (!secondaryCurrency || secondaryRate <= 0) return main;
-  return `${main} · ${formatCurrency(value / secondaryRate, secondaryCurrency)}`;
+  return `${main} · ${formatCurrency(convertPrimaryToSecondary(value), secondaryCurrency)}`;
 }
 
 export function formatDateTime(value: string): string {

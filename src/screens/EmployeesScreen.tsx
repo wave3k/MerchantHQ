@@ -53,7 +53,7 @@ const emptyEmployee: EmployeeInput = {
 
 const emptyAccount: UserInput = {
   employeeId: 0,
-  username: "",
+  email: "",
   role: "employee",
   password: "",
 };
@@ -168,7 +168,7 @@ export function EmployeesScreen({
       setError("Choisissez l’employé qui utilisera ce compte.");
       return;
     }
-    if (accountDraft.username.trim().length < 3) {
+    if (accountDraft.email.trim().length < 3) {
       setError("Le nom de connexion doit contenir au moins 3 caractères.");
       return;
     }
@@ -393,7 +393,7 @@ export function EmployeesScreen({
                   <Text numberOfLines={1} style={styles.name}>
                     {account.name}
                   </Text>
-                  <Text style={styles.username}>@{account.username}</Text>
+                  <Text style={styles.username}>{account.email}</Text>
                 </View>
               </View>
               <View style={styles.accountMeta}>
@@ -480,7 +480,7 @@ export function EmployeesScreen({
         {selectedUser ? (
           <>
             <View style={styles.accountDetails}>
-              <Text style={styles.detailsTitle}>@{selectedUser.username}</Text>
+              <Text style={styles.detailsTitle}>{selectedUser.email}</Text>
               <Text style={styles.detailsText}>
                 {roleLabel[selectedUser.role]} ·{" "}
                 {selectedUser.has_password
@@ -563,11 +563,11 @@ export function EmployeesScreen({
               autoCapitalize="none"
               autoCorrect={false}
               label="Nom de connexion"
-              onChangeText={(username) =>
-                setAccountDraft((value) => ({ ...value, username }))
+              onChangeText={(email) =>
+                setAccountDraft((value) => ({ ...value, email }))
               }
               placeholder="patrick"
-              value={accountDraft.username}
+              value={accountDraft.email}
             />
             <Text style={styles.formLabel}>Rôle</Text>
             <View style={styles.roles}>

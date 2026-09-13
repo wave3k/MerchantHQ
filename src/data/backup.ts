@@ -4,6 +4,7 @@ import * as Sharing from "expo-sharing";
 import type { SQLiteDatabase } from "expo-sqlite";
 
 import { APP_VERSION, BACKUP_FORMAT_VERSION } from "../appInfo";
+import { sectorLabel } from "../domain/sectors";
 import type { User } from "../types";
 import { withWriteTransaction } from "./transactions";
 import { getCurrentShopId } from "./shopContext";
@@ -45,7 +46,7 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
     "id",
     "shop_id",
     "name",
-    "username",
+    "email",
     "role",
     "employee_id",
     "password_hash",
@@ -151,7 +152,7 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
 
 export interface BackupFile {
   format: "commerce-manager-backup";
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
   appVersion?: string;
   exportedAt: string;
   exportedBy: string;
@@ -224,7 +225,7 @@ function assertBackup(value: unknown): asserts value is BackupFile {
     !value ||
     typeof value !== "object" ||
     (value as BackupFile).format !== "commerce-manager-backup" ||
-    ![1, 2, 3, 4, 5, 6, 7, 8, 9].includes((value as BackupFile).version)
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes((value as BackupFile).version)
   ) {
     throw new Error("Ce fichier n’est pas une sauvegarde MerchantHQ valide.");
   }
@@ -242,6 +243,55 @@ function assertBackup(value: unknown): asserts value is BackupFile {
       throw new Error(`La table ${table} est absente de la sauvegarde.`);
     }
   }
+}
+
+export async function exportMerchantList(
+  db: SQLiteDatabase,
+): Promise<string> {
+  const keys = [
+    "shop_name",
+    "shop_phone",
+    "shop_whatsapp",
+    "shop_city",
+    "shop_sector",
+    "shop_email",
+    "shop_address",
+    "partner_share_accepted",
+  ] as const;
+  const rows = await db.getAllAsync<{ key: string; value: string }>(
+    "SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?)",
+    ...keys,
+  );
+  const map = new Map(rows.map((r) => [r.key, r.value]));
+  const csv = [
+    ["Boutique", "Nom du responsable", "Téléphone", "WhatsApp", "Ville", "Secteur d'activité", "E-mail", "Adresse", "Partage partenaires"],
+    [
+      map.get("shop_name") ?? "",
+      "",
+      map.get("shop_phone") ?? "",
+      map.get("shop_whatsapp") ?? "",
+      map.get("shop_city") ?? "",
+      sectorLabel(map.get("shop_sector") ?? ""),
+      map.get("shop_email") ?? "",
+      map.get("shop_address") ?? "",
+      map.get("partner_share_accepted") === "1" ? "Oui" : "Non",
+    ],
+  ]
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+
+  const date = new Date().toISOString().slice(0, 10);
+  const file = new File(Paths.cache, `commercants-${date}.csv`);
+  file.create({ overwrite: true, intermediates: true });
+  file.write(csv);
+
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(file.uri, {
+      dialogTitle: "Exporter la liste des commerçants",
+      mimeType: "text/csv",
+    });
+  }
+  return file.uri;
 }
 
 async function insertRows(
@@ -300,6 +350,7 @@ export async function restoreBackupPayload(
 
   await withWriteTransaction(db, async (transaction) => {
     await transaction.execAsync(`
+      DELETE FROM shops;
       DELETE FROM order_items;
       DELETE FROM stock_movements;
       DELETE FROM orders;

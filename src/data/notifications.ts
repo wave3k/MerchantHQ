@@ -3,13 +3,14 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import { Platform } from "react-native";
 
 import { formatReminderDelay } from "../domain/appointments";
-import { formatMoney } from "../domain/format";
+import { formatDateTime, formatMoney } from "../domain/format";
 import { isLowStock } from "../domain/stock";
 import type { Appointment, ScreenKey } from "../types";
 import {
   getDashboardStats,
   listAppointments,
   listProducts,
+  logNotification,
   setAppointmentNotificationId,
 } from "./database";
 
@@ -19,8 +20,8 @@ const LOW_STOCK_SIGNATURE_KEY = "low_stock_signature";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldPlaySound: false,
-    shouldSetBadge: false,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
     shouldShowBanner: true,
     shouldShowList: true,
   }),
@@ -31,8 +32,10 @@ async function ensureChannel(): Promise<void> {
   await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
     name: "Alertes boutique",
     description: "Rendez-vous, stock à surveiller et résumé de la journée.",
-    importance: Notifications.AndroidImportance.DEFAULT,
-    vibrationPattern: [0, 180],
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: "default",
+    vibrationPattern: [0, 250, 200, 250],
+    enableVibrate: true,
   });
 }
 
@@ -84,6 +87,7 @@ export async function cancelLocalNotification(
 
 export async function scheduleAppointmentReminder(
   appointment: Appointment,
+  db?: SQLiteDatabase,
 ): Promise<string | null> {
   const reminderMinutes = appointment.reminder_minutes ?? 60;
   if (reminderMinutes <= 0) return null;
@@ -93,12 +97,20 @@ export async function scheduleAppointmentReminder(
   );
   if (reminderAt.getTime() <= Date.now()) return null;
 
-  return Notifications.scheduleNotificationAsync({
+  const title = `Rendez-vous dans ${formatReminderDelay(reminderMinutes).replace(" avant", "")}`;
+  const body = [
+    `${appointment.client_name}${appointment.client_phone ? ` · ${appointment.client_phone}` : ""}`,
+    appointment.product_name ? `Prestation : ${appointment.product_name}` : null,
+    `Heure : ${formatDateTime(appointment.scheduled_at)}`,
+    appointment.notes ? `Note : ${appointment.notes}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const notificationId = await Notifications.scheduleNotificationAsync({
     content: {
-      title: `Rendez-vous dans ${formatReminderDelay(reminderMinutes).replace(" avant", "")}`,
-      body: appointment.product_name
-        ? `${appointment.client_name} · ${appointment.product_name}`
-        : appointment.client_name,
+      title,
+      body,
       data: { screen: "appointments", appointmentId: appointment.id },
     },
     trigger: {
@@ -107,6 +119,20 @@ export async function scheduleAppointmentReminder(
       channelId: CHANNEL_ID,
     },
   });
+
+  try {
+    if (db) {
+      await logNotification(db, {
+        type: "appointment",
+        title,
+        body,
+        scheduledFor: appointment.scheduled_at,
+        deliveredAt: reminderAt.toISOString(),
+      });
+    }
+  } catch {}
+
+  return notificationId;
 }
 
 export async function notifyLowStockChanges(
@@ -125,20 +151,30 @@ export async function notifyLowStockChanges(
 
   const visible = products
     .slice(0, 3)
-    .map((product) => `${product.name}: ${product.stock}`)
+    .map((product) => `${product.name}: ${product.stock} (seuil ${product.low_stock_threshold})`)
     .join(" · ");
   const remaining =
     products.length > 3
-      ? ` · +${products.length - 3} autre${products.length - 3 > 1 ? "s" : ""}`
+      ? `\n+${products.length - 3} autre${products.length - 3 > 1 ? "s" : ""} produit${products.length - 3 > 1 ? "s" : ""} en stock faible`
       : "";
+  const title = `Stock à surveiller (${products.length})`;
+  const body = `${visible}${remaining}\n\nRéapprovisionnez ces produits pour éviter les ruptures.`;
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: "Stock à surveiller",
-      body: `${visible}${remaining}`,
+      title,
+      body,
       data: { screen: "products" },
     },
     trigger: null,
   });
+  try {
+    await logNotification(db, {
+      type: "stock",
+      title,
+      body,
+      deliveredAt: new Date().toISOString(),
+    });
+  } catch {}
 }
 
 export async function scheduleDailySummary(
@@ -154,16 +190,37 @@ export async function scheduleDailySummary(
   if (!isToday) target.setDate(target.getDate() + 1);
 
   const stats = await getDashboardStats(db);
+  const top = stats.topProducts[0];
+  const avgBasket =
+    stats.ordersToday > 0 ? stats.revenueToday / stats.ordersToday : 0;
+  const detailLines: string[] = [
+    `${stats.ordersToday} vente${stats.ordersToday > 1 ? "s" : ""} · ${formatMoney(
+      stats.revenueToday,
+    )}`,
+    `${stats.newClientsToday} nouveau${stats.newClientsToday > 1 ? "x" : ""} client${
+      stats.newClientsToday > 1 ? "s" : ""
+    } · ${formatMoney(avgBasket)} / panier`,
+  ];
+  if (top) {
+    detailLines.push(`Top produit : ${top.name} (${top.quantity} vendu${
+      top.quantity > 1 ? "s" : ""
+    })`);
+  }
+  if (stats.lowStockCount > 0) {
+    detailLines.push(
+      `${stats.lowStockCount} produit${stats.lowStockCount > 1 ? "s" : ""} en stock faible`,
+    );
+  }
+  if (stats.expensesToday > 0) {
+    detailLines.push(`Dépenses : ${formatMoney(stats.expensesToday)}`);
+  }
   const body = isToday
-    ? `${stats.ordersToday} vente${stats.ordersToday > 1 ? "s" : ""} · ${formatMoney(
-        stats.revenueToday,
-      )} · ${stats.newClientsToday} nouveau${
-        stats.newClientsToday > 1 ? "x" : ""
-      } client${stats.newClientsToday > 1 ? "s" : ""}.`
+    ? detailLines.join("\n")
     : "Ouvrez Statistiques pour consulter les ventes et les performances du jour.";
+  const title = "Résumé de la journée";
   const notificationId = await Notifications.scheduleNotificationAsync({
     content: {
-      title: "Résumé de la journée",
+      title,
       body,
       data: { screen: "home_dashboard" },
     },
@@ -173,6 +230,14 @@ export async function scheduleDailySummary(
       channelId: CHANNEL_ID,
     },
   });
+  try {
+    await logNotification(db, {
+      type: "daily_summary",
+      title,
+      body,
+      scheduledFor: target.toISOString(),
+    });
+  } catch {}
   await setInternalSetting(db, DAILY_SUMMARY_KEY, notificationId);
 }
 
@@ -197,7 +262,10 @@ async function refreshAppointmentReminders(
       new Date(appointment.scheduled_at).getTime() > Date.now(),
   );
   for (const appointment of missingReminders) {
-    const notificationId = await scheduleAppointmentReminder(appointment);
+    const notificationId = await scheduleAppointmentReminder(
+      appointment,
+      db,
+    );
     await setAppointmentNotificationId(db, appointment.id, notificationId);
   }
 }
@@ -214,17 +282,32 @@ export async function prepareDeviceNotifications(
   return true;
 }
 
-export async function sendTestNotification(): Promise<boolean> {
+export async function sendTestNotification(
+  db?: SQLiteDatabase,
+): Promise<boolean> {
   const granted = await ensureNotificationPermission(true);
   if (!granted) return false;
+  const title = "Notifications activées";
+  const body =
+    "Cette tablette recevra les rappels de rendez-vous et les alertes boutique.";
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: "Notifications activées",
-      body: "Cette tablette recevra les rappels de rendez-vous et les alertes boutique.",
+      title,
+      body,
       data: { screen: "appointments" },
     },
     trigger: null,
   });
+  if (db) {
+    try {
+      await logNotification(db, {
+        type: "test",
+        title,
+        body,
+        deliveredAt: new Date().toISOString(),
+      });
+    } catch {}
+  }
   return true;
 }
 

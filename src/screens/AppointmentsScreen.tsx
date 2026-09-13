@@ -471,7 +471,7 @@ export function AppointmentsScreen({ db, user }: AppointmentsScreenProps) {
         subtitle="Le produit et le rappel restent facultatifs."
         title={editing ? "Modifier le rendez-vous" : "Nouveau rendez-vous"}
         visible={editorOpen}
-        width={720}
+        width={Math.min(640, width - 48)}
       >
         <View style={styles.formHeader}>
           <Text style={styles.formLabel}>Client requis</Text>
@@ -679,7 +679,7 @@ function createStyles() {
     flexDirection: "column",
   },
   nextBlock: {
-    backgroundColor: colors.ink,
+    backgroundColor: colors.panelInk,
     borderRadius: radius.md,
     flex: 0.8,
     gap: space.xxs,
@@ -687,23 +687,23 @@ function createStyles() {
     padding: space.lg,
   },
   nextLabel: {
-    color: colors.inkSurfaceText,
+    color: colors.onPanelInk,
     fontFamily: fonts.bodyMedium,
     fontSize: 13,
   },
   nextTime: {
-    color: colors.surfaceStrong,
+    color: colors.onPanelInk,
     fontFamily: fonts.display,
     fontSize: 30,
     marginTop: space.sm,
   },
   nextClient: {
-    color: colors.surfaceStrong,
+    color: colors.onPanelInk,
     fontFamily: fonts.bodySemibold,
     fontSize: 17,
   },
   nextDetail: {
-    color: colors.inkSurfaceText,
+    color: colors.onPanelInk,
     fontFamily: fonts.body,
     fontSize: 14,
     lineHeight: 20,

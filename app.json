@@ -3,9 +3,16 @@
     "name": "MerchantHQ",
     "slug": "commerce-manager",
     "version": "0.1.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/dc495988-69d5-49f2-8a4e-6845e2f59832"
+    },
     "orientation": "landscape",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
     "android": {
       "package": "com.commercemanager.tablet",
       "softwareKeyboardLayoutMode": "resize",
@@ -13,13 +20,14 @@
         "SCHEDULE_EXACT_ALARM"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#F7F9FC"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true
     },
     "web": {
       "bundler": "metro",
-      "favicon": "./public/favicon.ico"
+      "favicon": "./public/favicon.png"
     },
     "ios": {
       "supportsTablet": true,
@@ -44,7 +52,11 @@
       ],
       "expo-notifications",
       "expo-background-task",
-      "expo-updates"
+      "expo-updates",
+      "expo-asset",
+      "expo-font",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {

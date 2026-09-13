@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 
 import { EmptyState, Page } from "../components/Page";
 import { LiveClock } from "../components/LiveClock";
+import { DailySummary } from "../components/DailySummary";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import { listAppointments } from "../data/database";
 import { userCanAccessScreen } from "../domain/permissions";
@@ -87,7 +88,12 @@ export function CaisseHomeScreen({
 
   return (
     <Page
-      action={<LiveClock />}
+      action={
+        <View style={styles.headerActions}>
+          <DailySummary db={db} />
+          <LiveClock />
+        </View>
+      }
       description="Les actions utiles maintenant pour les encaissements."
       title="Caisse"
     >
@@ -234,6 +240,11 @@ export function CaisseHomeScreen({
 
 function createStyles() {
   return StyleSheet.create({
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: space.sm,
+  },
   actionsBand: {
     borderBottomColor: colors.rule,
     borderBottomWidth: 1,

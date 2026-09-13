@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 
 import { EmptyState, Page } from "../components/Page";
 import { LiveClock } from "../components/LiveClock";
+import { DailySummary } from "../components/DailySummary";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import { listProducts } from "../data/database";
 import { userCanAccessScreen } from "../domain/permissions";
@@ -76,7 +77,12 @@ export function BoutiqueHomeScreen({
 
   return (
     <Page
-      action={<LiveClock />}
+      action={
+        <View style={styles.headerActions}>
+          <DailySummary db={db} />
+          <LiveClock />
+        </View>
+      }
       description="Gérez vos stocks, votre équipe et les paramètres de la boutique."
       title="Boutique"
     >
@@ -210,6 +216,11 @@ export function BoutiqueHomeScreen({
 
 function createStyles() {
   return StyleSheet.create({
+  headerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
   actionsBand: {
     borderBottomColor: colors.rule,
     borderBottomWidth: 1,

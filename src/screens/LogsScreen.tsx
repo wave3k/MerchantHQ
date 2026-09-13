@@ -1,8 +1,10 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import {
+  FlatList,
   Pressable,
   StyleSheet,
   View,
+  useWindowDimensions,
 } from "react-native";
 import Icon from "../components/Icon";
 import { useEffect, useMemo, useState } from "react";
@@ -43,6 +45,7 @@ function prettyJson(value: string | null): string {
 
 export function LogsScreen({ db }: LogsScreenProps) {
   const styles = useThemedStyles(createStyles);
+  const { width } = useWindowDimensions();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<ActivityLog | null>(null);
@@ -152,7 +155,7 @@ export function LogsScreen({ db }: LogsScreenProps) {
         subtitle={selected ? formatDateTime(selected.created_at) : undefined}
         title="Détail de l’action"
         visible={selected !== null}
-        width={680}
+        width={Math.min(600, width - 48)}
       >
         {selected ? (
           <>

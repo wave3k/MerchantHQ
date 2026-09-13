@@ -1,4 +1,4 @@
-﻿import type { SQLiteDatabase } from "expo-sqlite";
+import type { SQLiteDatabase } from "expo-sqlite";
 
 import type {
   ActivityLog,
@@ -16,6 +16,7 @@ import type {
   Expense,
   ExpenseCategory,
   ExpenseInput,
+  NotificationLog,
   Order,
   Product,
   ProductInput,
@@ -32,7 +33,7 @@ import { withWriteTransaction } from "./transactions";
 import { getCurrentShopId, getCurrentShopIdOrThrow } from "./shopContext";
 
 const now = () => new Date().toISOString();
-const CURRENT_SCHEMA_VERSION = 11;
+const CURRENT_SCHEMA_VERSION = 13;
 
 function generateId(): string {
   const bytes = new Uint8Array(16);
@@ -51,7 +52,7 @@ function generateId(): string {
 
 export interface OwnerAccountRecord {
   name: string;
-  username: string;
+  email: string;
   passwordHash: string;
   passwordSalt: string;
   updatedAt: string;
@@ -80,7 +81,7 @@ CREATE TABLE IF NOT EXISTS employees (
   shop_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
   phone TEXT NOT NULL DEFAULT '',
-  position TEXT NOT NULL DEFAULT 'EmployÃ©',
+  position TEXT NOT NULL DEFAULT 'Employé',
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -90,7 +91,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   shop_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
-  username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  email TEXT NOT NULL COLLATE NOCASE UNIQUE,
   role TEXT NOT NULL CHECK(role IN ('boss', 'manager', 'cashier', 'employee')),
   employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
   password_hash TEXT NOT NULL DEFAULT '',
@@ -120,7 +121,7 @@ CREATE TABLE IF NOT EXISTS products (
   shop_id TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
   sku TEXT COLLATE NOCASE UNIQUE,
-  category TEXT NOT NULL DEFAULT 'GÃ©nÃ©ral',
+  category TEXT NOT NULL DEFAULT 'Général',
   price INTEGER NOT NULL CHECK(price >= 0),
   stock INTEGER NOT NULL DEFAULT 0 CHECK(stock >= 0),
   low_stock_threshold INTEGER NOT NULL DEFAULT 5 CHECK(low_stock_threshold >= 0),
@@ -234,16 +235,38 @@ CREATE TABLE IF NOT EXISTS activity_logs (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS notification_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_id TEXT NOT NULL DEFAULT '',
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  scheduled_for TEXT,
+  delivered_at TEXT,
+  read_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_logs_created_at ON notification_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_notification_logs_shop ON notification_logs(shop_id, created_at);
+
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_client_id ON orders(client_id);
+CREATE INDEX IF NOT EXISTS idx_orders_shop_created ON orders(shop_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_logs_created_at ON activity_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_logs_shop_created ON activity_logs(shop_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);
+CREATE INDEX IF NOT EXISTS idx_products_shop_active ON products(shop_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_clients_shop_created ON clients(shop_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_expenses_shop_created ON expenses(shop_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_employees_active ON employees(is_active);
+CREATE INDEX IF NOT EXISTS idx_employees_shop ON employees(shop_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_attendance_work_date ON attendance_records(work_date);
 CREATE INDEX IF NOT EXISTS idx_attendance_employee_id ON attendance_records(employee_id);
 CREATE INDEX IF NOT EXISTS idx_appointments_scheduled_at ON appointments(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_appointments_client_id ON appointments(client_id);
+CREATE INDEX IF NOT EXISTS idx_appointments_shop_scheduled ON appointments(shop_id, scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_shops_active ON shops(is_active);
 `;
 
@@ -288,10 +311,10 @@ async function migrateToVersion2(db: SQLiteDatabase): Promise<void> {
   for (const account of usersWithoutEmployee) {
     const position =
       account.role === "boss"
-        ? "PropriÃ©taire"
+        ? "Propriétaire"
         : account.role === "manager"
-          ? "GÃ©rant"
-          : "EmployÃ©";
+          ? "Gérant"
+          : "Employé";
     const result = await db.runAsync(
       `INSERT INTO employees
         (name, phone, position, is_active, created_at, updated_at)
@@ -403,7 +426,7 @@ async function migrateToVersion8(db: SQLiteDatabase): Promise<void> {
           CREATE TABLE users_v8 (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
-            username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+email TEXT NOT NULL COLLATE NOCASE UNIQUE,
             role TEXT NOT NULL CHECK(role IN ('boss', 'manager', 'cashier', 'employee')),
             employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
             password_hash TEXT NOT NULL DEFAULT '',
@@ -437,7 +460,7 @@ async function migrateToVersion9(db: SQLiteDatabase): Promise<void> {
         name TEXT NOT NULL COLLATE NOCASE UNIQUE,
         created_at TEXT NOT NULL
       );
-      INSERT OR IGNORE INTO categories (name, created_at) VALUES ('GÃ©nÃ©ral', '${timestamp}');
+      INSERT OR IGNORE INTO categories (name, created_at) VALUES ('Général', '${timestamp}');
       INSERT OR IGNORE INTO categories (name, created_at)
         SELECT DISTINCT category, '${timestamp}'
         FROM products
@@ -473,8 +496,8 @@ async function migrateToVersion10(db: SQLiteDatabase): Promise<void> {
         ('Salaires', 1, '${timestamp}'),
         ('Fournitures', 1, '${timestamp}'),
         ('Transport', 1, '${timestamp}'),
-        ('Ã‰nergie', 1, '${timestamp}'),
-        ('PublicitÃ©', 1, '${timestamp}'),
+        ('Énergie', 1, '${timestamp}'),
+        ('Publicité', 1, '${timestamp}'),
         ('Autre', 1, '${timestamp}');
     `);
   });
@@ -542,6 +565,147 @@ async function migrateToVersion11(db: SQLiteDatabase): Promise<void> {
   });
 }
 
+// Map a Windows-1252 decoded character back to its byte so we can reverse
+// the "UTF-8 text read as Windows-1252 then saved as UTF-8" mojibake that
+// corrupted French accents (PropriÃ©taire -> Propriétaire) in legacy data.
+function mojibakeByte(ch: string): number {
+  const code = ch.charCodeAt(0);
+  if (code >= 0x00a0 && code <= 0x00ff) return code;
+  switch (code) {
+    case 0x20ac: return 0x80; // €
+    case 0x201a: return 0x82; // ‚
+    case 0x0192: return 0x83; // ƒ
+    case 0x201e: return 0x84; // „
+    case 0x2026: return 0x85; // …
+    case 0x2020: return 0x86; // †
+    case 0x2021: return 0x87; // ‡
+    case 0x02c6: return 0x88; // ˆ
+    case 0x2030: return 0x89; // ‰
+    case 0x0160: return 0x8a; // Š
+    case 0x2039: return 0x8b; // ‹
+    case 0x0152: return 0x8c; // Œ
+    case 0x017d: return 0x8e; // Ž
+    case 0x2018: return 0x91; // '
+    case 0x2019: return 0x92; // '
+    case 0x201c: return 0x93; // "
+    case 0x201d: return 0x94; // "
+    case 0x2022: return 0x95; // •
+    case 0x2013: return 0x96; // –
+    case 0x2014: return 0x97; // —
+    case 0x02dc: return 0x98; // ˜
+    case 0x2122: return 0x99; // ™
+    case 0x0161: return 0x9a; // š
+    case 0x203a: return 0x9b; // ›
+    case 0x0153: return 0x9c; // œ
+    case 0x017e: return 0x9e; // ž
+    case 0x0178: return 0x9f; // Ÿ
+    default: return code & 0xff;
+  }
+}
+
+function fixMojibake(value: string): string {
+  let out = "";
+  let i = 0;
+  const len = value.length;
+  while (i < len) {
+    const code = value.charCodeAt(i);
+    if ((code === 0x00c2 || code === 0x00c3) && i + 1 < len) {
+      const b0 = code;
+      const b1 = mojibakeByte(value.charAt(i + 1));
+      if ((b0 & 0xe0) === 0xc0 && (b1 & 0xc0) === 0x80) {
+        out += String.fromCharCode(((b0 & 0x1f) << 6) | (b1 & 0x3f));
+        i += 2;
+        continue;
+      }
+    } else if (code === 0x00e2 && i + 2 < len) {
+      const b0 = code;
+      const b1 = mojibakeByte(value.charAt(i + 1));
+      const b2 = mojibakeByte(value.charAt(i + 2));
+      if (
+        (b0 & 0xf0) === 0xe0 &&
+        (b1 & 0xc0) === 0x80 &&
+        (b2 & 0xc0) === 0x80
+      ) {
+        out += String.fromCharCode(
+          ((b0 & 0x0f) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f),
+        );
+        i += 3;
+        continue;
+      }
+    }
+    out += value[i];
+    i += 1;
+  }
+  return out;
+}
+
+async function fixColumnMojibake(
+  transaction: SQLiteDatabase,
+  table: string,
+  column: string,
+  idColumn: string = "id",
+): Promise<void> {
+  const rows = await transaction.getAllAsync<{ id: number; value: string | null }>(
+    `SELECT ${idColumn} AS id, ${column} AS value FROM ${table}`,
+  );
+  for (const row of rows) {
+    if (typeof row.value !== "string") continue;
+    const fixed = fixMojibake(row.value);
+    if (fixed !== row.value) {
+      await transaction.runAsync(
+        `UPDATE ${table} SET ${column} = ? WHERE ${idColumn} = ?`,
+        fixed,
+        row.id,
+      );
+    }
+  }
+}
+
+async function migrateToVersion12(db: SQLiteDatabase): Promise<void> {
+  await withWriteTransaction(db, async (transaction) => {
+    await fixColumnMojibake(transaction, "employees", "position");
+    await fixColumnMojibake(transaction, "products", "category");
+    await fixColumnMojibake(transaction, "categories", "name");
+    await fixColumnMojibake(transaction, "expense_categories", "name");
+    await fixColumnMojibake(transaction, "activity_logs", "description");
+    await fixColumnMojibake(transaction, "activity_logs", "old_value");
+    await fixColumnMojibake(transaction, "activity_logs", "new_value");
+    await fixColumnMojibake(transaction, "settings", "value", "key");
+  });
+}
+
+// v13: les comptes passent du "username" à l'adresse e-mail. Tous les comptes
+// existants sont supprimés (les identifiants de connexion changent de nature),
+// puis la table users est reconstruite avec la colonne email.
+async function migrateToVersion13(db: SQLiteDatabase): Promise<void> {
+  await db.execAsync("PRAGMA foreign_keys = OFF;");
+  try {
+    await withWriteTransaction(db, async (transaction) => {
+      await transaction.runAsync("DELETE FROM users;");
+      await transaction.execAsync(`
+        CREATE TABLE users_v13 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          shop_id TEXT NOT NULL DEFAULT '',
+          name TEXT NOT NULL,
+          email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+          role TEXT NOT NULL CHECK(role IN ('boss', 'manager', 'cashier', 'employee')),
+          employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+          password_hash TEXT NOT NULL DEFAULT '',
+          password_salt TEXT NOT NULL DEFAULT '',
+          permissions TEXT,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        DROP TABLE users;
+        ALTER TABLE users_v13 RENAME TO users;
+      `);
+    });
+  } finally {
+    await db.execAsync("PRAGMA foreign_keys = ON;");
+  }
+}
+
 async function ensureShopsTable(db: SQLiteDatabase): Promise<void> {
   const shopsColumns = await tableColumns(db, "shops");
   if (shopsColumns.size === 0) {
@@ -559,9 +723,9 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
     ["currency_secondary", "USD"],
     ["currency_rate", "2800"],
     ["language", "fr"],
-    ["theme", "cobalt"],
+    ["theme", "light"],
     ["tax_rate", "0"],
-    ["opening_hours", "08:00 â€“ 18:00"],
+    ["opening_hours", "08:00 – 18:00"],
     ["shop_address", ""],
     ["shop_phone", ""],
     ["shop_email", ""],
@@ -639,6 +803,12 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   if (needsShopMigration || (meta && meta.version < 11)) {
     await migrateToVersion11(db);
   }
+  if (meta && meta.version < 12) {
+    await migrateToVersion12(db);
+  }
+  if (!userColumns.has("email") || (meta && meta.version < 13)) {
+    await migrateToVersion13(db);
+  }
 
   if (!meta) {
     await db.runAsync(
@@ -681,7 +851,7 @@ async function writeLog(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     shopId,
     actor?.id ?? null,
-    actor?.name ?? "SystÃ¨me",
+    actor?.name ?? "Système",
     actor?.role ?? "system",
     values.action,
     values.entityType,
@@ -786,11 +956,11 @@ export async function deleteShop(db: SQLiteDatabase, shopId: string): Promise<vo
 export async function createBoss(
   db: SQLiteDatabase,
   name: string,
-  username: string,
+  email: string,
   password: string,
 ): Promise<User> {
   if ((await hasUsers(db))) {
-    throw new Error("Le compte PropriÃ©taire existe dÃ©jÃ .");
+    throw new Error("Le compte Propriétaire existe déjà.");
   }
   const credentials = await createPasswordHash(password);
   const timestamp = now();
@@ -800,7 +970,7 @@ export async function createBoss(
     const employeeResult = await transaction.runAsync(
       `INSERT INTO employees
         (shop_id, name, phone, position, is_active, created_at, updated_at)
-       VALUES (?, ?, '', 'PropriÃ©taire', 1, ?, ?)`,
+       VALUES (?, ?, '', 'Propriétaire', 1, ?, ?)`,
       shopId,
       name.trim(),
       timestamp,
@@ -808,11 +978,11 @@ export async function createBoss(
     );
     const result = await transaction.runAsync(
       `INSERT INTO users
-        (shop_id, name, username, role, employee_id, password_hash, password_salt, is_active, created_at, updated_at)
+        (shop_id, name, email, role, employee_id, password_hash, password_salt, is_active, created_at, updated_at)
        VALUES (?, ?, ?, 'boss', ?, ?, ?, 1, ?, ?)`,
       shopId,
       name.trim(),
-      username.trim(),
+      email.trim(),
       employeeResult.lastInsertRowId,
       credentials.hash,
       credentials.salt,
@@ -820,7 +990,7 @@ export async function createBoss(
       timestamp,
     );
     user = await transaction.getFirstAsync<User>(
-      `SELECT id, name, username, role, employee_id, permissions,
+      `SELECT id, name, email, role, employee_id, permissions,
         CASE WHEN password_hash = '' THEN 0 ELSE 1 END AS has_password,
         is_active, created_at
        FROM users WHERE id = ?`,
@@ -831,12 +1001,12 @@ export async function createBoss(
         action: "create",
         entityType: "user",
         entityId: user.id,
-        description: `${user.name} a crÃ©Ã© le compte PropriÃ©taire initial.`,
-        newValue: { name: user.name, username: user.username, role: user.role },
+        description: `${user.name} a créé le compte Propriétaire initial.`,
+        newValue: { name: user.name, email: user.email, role: user.role },
       });
     }
   });
-  if (!user) throw new Error("Impossible de crÃ©er le compte PropriÃ©taire.");
+  if (!user) throw new Error("Impossible de créer le compte Propriétaire.");
   await db.runAsync(
     `INSERT INTO settings (key, value) VALUES ('owner_account_pending', '1')
      ON CONFLICT(key) DO UPDATE SET value = '1'`,
@@ -849,7 +1019,7 @@ export async function listUsers(
   includeInactive = false,
 ): Promise<User[]> {
   return db.getAllAsync<User>(
-    `SELECT u.id, COALESCE(e.name, u.name) AS name, u.username, u.role,
+    `SELECT u.id, COALESCE(e.name, u.name) AS name, u.email, u.role,
       u.employee_id, u.permissions, u.shop_id,
       CASE WHEN u.password_hash = '' THEN 0 ELSE 1 END AS has_password,
       u.is_active, u.created_at
@@ -869,7 +1039,7 @@ export async function login(
   const row = await db.getFirstAsync<
     User & { password_hash: string; password_salt: string }
   >(
-    `SELECT u.id, COALESCE(e.name, u.name) AS name, u.username, u.role,
+    `SELECT u.id, COALESCE(e.name, u.name) AS name, u.email, u.role,
       u.employee_id, u.permissions, u.shop_id,
       CASE WHEN u.password_hash = '' THEN 0 ELSE 1 END AS has_password,
       u.is_active, u.created_at, u.password_hash, u.password_salt
@@ -901,7 +1071,7 @@ export async function login(
   await writeLog(db, user, {
     action: "login",
     entityType: "session",
-    description: `${user.name} sâ€™est connectÃ© Ã  lâ€™application.`,
+    description: `${user.name} s’est connecté à l’application.`,
   });
   return user;
 }
@@ -911,12 +1081,12 @@ export async function getOwnerAccountRecord(
 ): Promise<OwnerAccountRecord | null> {
   const row = await db.getFirstAsync<{
     name: string;
-    username: string;
+    email: string;
     password_hash: string;
     password_salt: string;
     updated_at: string;
   }>(
-    `SELECT COALESCE(e.name, u.name) AS name, u.username, u.password_hash,
+    `SELECT COALESCE(e.name, u.name) AS name, u.email, u.password_hash,
       u.password_salt, u.updated_at
      FROM users u
      LEFT JOIN employees e ON e.id = u.employee_id
@@ -926,7 +1096,7 @@ export async function getOwnerAccountRecord(
   return row
     ? {
         name: row.name,
-        username: row.username,
+        email: row.email,
         passwordHash: row.password_hash,
         passwordSalt: row.password_salt,
         updatedAt: row.updated_at,
@@ -951,7 +1121,7 @@ export async function applyRemoteOwnerAccount(
       const employee = await transaction.runAsync(
         `INSERT INTO employees
           (name, phone, position, is_active, created_at, updated_at)
-         VALUES (?, '', 'PropriÃ©taire', 1, ?, ?)`,
+         VALUES (?, '', 'Propriétaire', 1, ?, ?)`,
         account.name,
         timestamp,
         timestamp,
@@ -967,11 +1137,11 @@ export async function applyRemoteOwnerAccount(
     }
     if (existing) {
       await transaction.runAsync(
-        `UPDATE users SET name = ?, username = ?, employee_id = ?,
+        `UPDATE users SET name = ?, email = ?, employee_id = ?,
           password_hash = ?, password_salt = ?, is_active = 1, updated_at = ?
          WHERE id = ?`,
         account.name,
-        account.username,
+        account.email,
         employeeId,
         account.passwordHash,
         account.passwordSalt,
@@ -981,10 +1151,10 @@ export async function applyRemoteOwnerAccount(
     } else {
       await transaction.runAsync(
         `INSERT INTO users
-          (name, username, role, employee_id, password_hash, password_salt, is_active, created_at, updated_at)
+          (name, email, role, employee_id, password_hash, password_salt, is_active, created_at, updated_at)
          VALUES (?, ?, 'boss', ?, ?, ?, 1, ?, ?)`,
         account.name,
-        account.username,
+        account.email,
         employeeId,
         account.passwordHash,
         account.passwordSalt,
@@ -1021,18 +1191,18 @@ export async function changeBossPassword(
   nextPassword: string,
 ): Promise<void> {
   if (nextPassword.length < 4) {
-    throw new Error("Le nouveau mot de passe doit contenir au moins 4 caractÃ¨res.");
+    throw new Error("Le nouveau mot de passe doit contenir au moins 4 caractères.");
   }
   if (!(await verifyBossPassword(db, currentPassword))) {
     throw new Error("Le mot de passe actuel est incorrect.");
   }
   const boss = await db.getFirstAsync<User>(
-    `SELECT id, name, username, role, employee_id, permissions,
+    `SELECT id, name, email, role, employee_id, permissions,
       CASE WHEN password_hash = '' THEN 0 ELSE 1 END AS has_password,
       is_active, created_at
      FROM users WHERE role = 'boss' AND is_active = 1 LIMIT 1`,
   );
-  if (!boss) throw new Error("Compte propriÃ©taire introuvable.");
+  if (!boss) throw new Error("Compte propriétaire introuvable.");
   const credentials = await createPasswordHash(nextPassword);
   await db.runAsync(
     "UPDATE users SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?",
@@ -1049,7 +1219,7 @@ export async function changeBossPassword(
     action: "password_change",
     entityType: "user",
     entityId: boss.id,
-    description: "Le mot de passe du compte propriÃ©taire a Ã©tÃ© modifiÃ©.",
+    description: "Le mot de passe du compte propriétaire a été modifié.",
   });
 }
 
@@ -1058,15 +1228,15 @@ export async function resetBossPassword(
   nextPassword: string,
 ): Promise<void> {
   if (nextPassword.length < 4) {
-    throw new Error("Le nouveau mot de passe doit contenir au moins 4 caractÃ¨res.");
+    throw new Error("Le nouveau mot de passe doit contenir au moins 4 caractères.");
   }
   const boss = await db.getFirstAsync<User>(
-    `SELECT id, name, username, role, employee_id, permissions,
+    `SELECT id, name, email, role, employee_id, permissions,
       CASE WHEN password_hash = '' THEN 0 ELSE 1 END AS has_password,
       is_active, created_at
      FROM users WHERE role = 'boss' AND is_active = 1 LIMIT 1`,
   );
-  if (!boss) throw new Error("Compte propriÃ©taire introuvable.");
+  if (!boss) throw new Error("Compte propriétaire introuvable.");
   const credentials = await createPasswordHash(nextPassword);
   await db.runAsync(
     "UPDATE users SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?",
@@ -1083,7 +1253,7 @@ export async function resetBossPassword(
     action: "password_reset",
     entityType: "user",
     entityId: boss.id,
-    description: "Le mot de passe du compte propriÃ©taire a Ã©tÃ© rÃ©initialisÃ© via l'accÃ¨s dÃ©veloppeur.",
+    description: "Le mot de passe du compte propriétaire a été réinitialisé via l'accès développeur.",
   });
 }
 
@@ -1097,8 +1267,8 @@ export async function recordLogout(
     entityType: "session",
     description:
       reason === "inactivity"
-        ? `${user.name} a Ã©tÃ© dÃ©connectÃ© aprÃ¨s une pÃ©riode dâ€™inactivitÃ©.`
-        : `${user.name} a verrouillÃ© sa session.`,
+        ? `${user.name} a été déconnecté après une période d’inactivité.`
+        : `${user.name} a verrouillé sa session.`,
   });
 }
 
@@ -1114,7 +1284,7 @@ export async function createUser(
     input.employeeId,
   );
   if (!employee) {
-    throw new Error("Cet employÃ© est introuvable ou possÃ¨de dÃ©jÃ  un compte.");
+    throw new Error("Cet employé est introuvable ou possède déjà un compte.");
   }
   const passwordError = validateAccountPassword(input.role, input.password);
   if (passwordError) throw new Error(passwordError);
@@ -1123,11 +1293,11 @@ export async function createUser(
   const timestamp = now();
   const result = await db.runAsync(
     `INSERT INTO users
-      (shop_id, name, username, role, employee_id, password_hash, password_salt, permissions, is_active, created_at, updated_at)
+      (shop_id, name, email, role, employee_id, password_hash, password_salt, permissions, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
     shopId,
     employee.name,
-    input.username.trim(),
+    input.email.trim(),
     input.role,
     employee.id,
     credentials.hash,
@@ -1140,11 +1310,11 @@ export async function createUser(
     action: "create",
     entityType: "user",
     entityId: result.lastInsertRowId,
-    description: `${actor.name} a crÃ©Ã© le compte ${input.role === "manager" ? "gÃ©rant" : "employÃ©"} de ${employee.name}.`,
+    description: `${actor.name} a créé le compte ${input.role === "manager" ? "gérant" : "employé"} de ${employee.name}.`,
     newValue: {
       name: employee.name,
       employeeId: employee.id,
-      username: input.username.trim(),
+      email: input.email.trim(),
       role: input.role,
       passwordRequired: Boolean(input.password),
     },
@@ -1161,9 +1331,9 @@ export async function updateUserPermissions(
     "SELECT name, role FROM users WHERE id = ?",
     userId,
   );
-  if (!target) throw new Error("Ce compte nâ€™existe plus.");
+  if (!target) throw new Error("Ce compte n’existe plus.");
   if (target.role === "boss") {
-    throw new Error("Les permissions du compte PropriÃ©taire ne peuvent pas Ãªtre modifiÃ©es.");
+    throw new Error("Les permissions du compte Propriétaire ne peuvent pas être modifiées.");
   }
   await db.runAsync(
     "UPDATE users SET permissions = ?, updated_at = ? WHERE id = ?",
@@ -1175,7 +1345,7 @@ export async function updateUserPermissions(
     action: "update",
     entityType: "user",
     entityId: userId,
-    description: `${actor.name} a modifiÃ© les permissions de ${target.name}.`,
+    description: `${actor.name} a modifié les permissions de ${target.name}.`,
     oldValue: { permissions },
     newValue: { permissions },
   });
@@ -1186,7 +1356,7 @@ export async function deactivateUser(
   user: User,
   actor: User,
 ): Promise<void> {
-  if (user.role === "boss") throw new Error("Le compte PropriÃ©taire ne peut pas Ãªtre supprimÃ©.");
+  if (user.role === "boss") throw new Error("Le compte Propriétaire ne peut pas être supprimé.");
   await db.runAsync(
     "UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?",
     now(),
@@ -1196,7 +1366,7 @@ export async function deactivateUser(
     action: "deactivate",
     entityType: "user",
     entityId: user.id,
-    description: `${actor.name} a dÃ©sactivÃ© le compte de ${user.name}.`,
+    description: `${actor.name} a désactivé le compte de ${user.name}.`,
     oldValue: { is_active: 1 },
     newValue: { is_active: 0 },
   });
@@ -1239,7 +1409,7 @@ export async function saveEmployee(
       employeeId,
       shopId,
     );
-    if (!previous) throw new Error("EmployÃ© introuvable.");
+    if (!previous) throw new Error("Employé introuvable.");
     await withWriteTransaction(db, async (transaction) => {
       await transaction.runAsync(
         `UPDATE employees
@@ -1247,7 +1417,7 @@ export async function saveEmployee(
          WHERE id = ? AND shop_id = ?`,
         input.name.trim(),
         input.phone?.trim() ?? "",
-        input.position.trim() || "EmployÃ©",
+        input.position.trim() || "Employé",
         timestamp,
         employeeId,
         shopId,
@@ -1263,7 +1433,7 @@ export async function saveEmployee(
         action: "update",
         entityType: "employee",
         entityId: employeeId,
-        description: `${actor.name} a modifiÃ© la fiche de ${input.name.trim()}.`,
+        description: `${actor.name} a modifié la fiche de ${input.name.trim()}.`,
         oldValue: previous,
         newValue: input,
       });
@@ -1278,7 +1448,7 @@ export async function saveEmployee(
     shopId,
     input.name.trim(),
     input.phone?.trim() ?? "",
-    input.position.trim() || "EmployÃ©",
+    input.position.trim() || "Employé",
     timestamp,
     timestamp,
   );
@@ -1286,7 +1456,7 @@ export async function saveEmployee(
     action: "create",
     entityType: "employee",
     entityId: result.lastInsertRowId,
-    description: `${actor.name} a ajoutÃ© ${input.name.trim()} au personnel.`,
+    description: `${actor.name} a ajouté ${input.name.trim()} au personnel.`,
     newValue: input,
   });
   return result.lastInsertRowId;
@@ -1302,7 +1472,7 @@ export async function deactivateEmployee(
     employee.id,
   );
   if (linkedBoss) {
-    throw new Error("La fiche du propriÃ©taire ne peut pas Ãªtre dÃ©sactivÃ©e.");
+    throw new Error("La fiche du propriétaire ne peut pas être désactivée.");
   }
   await withWriteTransaction(db, async (transaction) => {
     await transaction.runAsync(
@@ -1319,7 +1489,7 @@ export async function deactivateEmployee(
       action: "deactivate",
       entityType: "employee",
       entityId: employee.id,
-      description: `${actor.name} a dÃ©sactivÃ© la fiche de ${employee.name}.`,
+      description: `${actor.name} a désactivé la fiche de ${employee.name}.`,
       oldValue: { is_active: 1 },
       newValue: { is_active: 0 },
     });
@@ -1363,13 +1533,13 @@ export async function saveAttendance(
   actor: User,
 ): Promise<void> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.workDate)) {
-    throw new Error("La date de prÃ©sence est invalide.");
+    throw new Error("La date de présence est invalide.");
   }
   const employee = await db.getFirstAsync<Employee>(
     "SELECT * FROM employees WHERE id = ? AND is_active = 1",
     input.employeeId,
   );
-  if (!employee) throw new Error("EmployÃ© introuvable.");
+  if (!employee) throw new Error("Employé introuvable.");
   const shopId = employee.shop_id ?? (await resolveShopId(db));
   const previous = await db.getFirstAsync<AttendanceRecord>(
     "SELECT * FROM attendance_records WHERE employee_id = ? AND work_date = ? AND shop_id = ?",
@@ -1380,13 +1550,13 @@ export async function saveAttendance(
   const timestamp = now();
   const arrivalAt = input.status === "present" ? input.arrivalAt : null;
   if (input.status === "present" && !arrivalAt) {
-    throw new Error("Indiquez lâ€™heure dâ€™arrivÃ©e.");
+    throw new Error("Indiquez l’heure d’arrivée.");
   }
   if (
     input.status === "absent_justified" &&
     (input.note?.trim().length ?? 0) < 2
   ) {
-    throw new Error("Indiquez la raison de lâ€™absence justifiÃ©e.");
+    throw new Error("Indiquez la raison de l’absence justifiée.");
   }
   await withWriteTransaction(db, async (transaction) => {
     await transaction.runAsync(
@@ -1417,7 +1587,7 @@ export async function saveAttendance(
     );
     const statusDescription =
       input.status === "present"
-        ? "prÃ©sent"
+        ? "présent"
         : input.status === "absent_justified"
           ? "absent avec justification"
           : "absent sans justification";
@@ -1425,7 +1595,7 @@ export async function saveAttendance(
       action: previous ? "update" : "create",
       entityType: "attendance",
       entityId: current?.id ?? null,
-      description: `${actor.name} a marquÃ© ${employee.name} ${statusDescription} le ${input.workDate}.`,
+      description: `${actor.name} a marqué ${employee.name} ${statusDescription} le ${input.workDate}.`,
       oldValue: previous ?? undefined,
       newValue: current ?? input,
     });
@@ -1457,7 +1627,7 @@ export async function listCategories(db: SQLiteDatabase): Promise<string[]> {
        UNION
        SELECT DISTINCT category AS name FROM products WHERE category <> '' AND shop_id = ?
      )
-     ORDER BY CASE WHEN name = 'GÃ©nÃ©ral' THEN 0 ELSE 1 END, name COLLATE NOCASE`,
+     ORDER BY CASE WHEN name = 'Général' THEN 0 ELSE 1 END, name COLLATE NOCASE`,
     shopId,
     shopId,
   );
@@ -1472,7 +1642,7 @@ export async function createCategory(
   const trimmed = name.trim();
   if (trimmed.length < 2) {
     throw new Error(
-      "Le nom de la catÃ©gorie doit contenir au moins 2 caractÃ¨res.",
+      "Le nom de la catégorie doit contenir au moins 2 caractères.",
     );
   }
   const timestamp = now();
@@ -1480,7 +1650,7 @@ export async function createCategory(
   await writeLog(db, actor, {
     action: "create",
     entityType: "category",
-    description: `${actor.name} a crÃ©Ã© la catÃ©gorie ${trimmed}.`,
+    description: `${actor.name} a créé la catégorie ${trimmed}.`,
     newValue: { name: trimmed },
   });
 }
@@ -1504,7 +1674,7 @@ export async function createExpenseCategory(
   const trimmed = name.trim();
   if (trimmed.length < 2) {
     throw new Error(
-      "Le nom de la catÃ©gorie doit contenir au moins 2 caractÃ¨res.",
+      "Le nom de la catégorie doit contenir au moins 2 caractères.",
     );
   }
   const shopId = await resolveShopId(db);
@@ -1518,7 +1688,7 @@ export async function createExpenseCategory(
   await writeLog(db, actor, {
     action: "create",
     entityType: "expense_category",
-    description: `${actor.name} a crÃ©Ã© la catÃ©gorie de dÃ©pense ${trimmed}.`,
+    description: `${actor.name} a créé la catégorie de dépense ${trimmed}.`,
     newValue: { name: trimmed },
   });
 }
@@ -1542,7 +1712,7 @@ export async function saveExpense(
   actor: User,
 ): Promise<void> {
   if (!Number.isFinite(input.amount) || input.amount <= 0) {
-    throw new Error("Le montant de la dÃ©pense doit Ãªtre supÃ©rieur Ã  zÃ©ro.");
+    throw new Error("Le montant de la dépense doit être supérieur à zéro.");
   }
   const shopId = await resolveShopId(db);
   const timestamp = now();
@@ -1561,7 +1731,7 @@ export async function saveExpense(
   await writeLog(db, actor, {
     action: "create",
     entityType: "expense",
-    description: `${actor.name} a enregistrÃ© une dÃ©pense de ${input.amount}.`,
+    description: `${actor.name} a enregistré une dépense de ${input.amount}.`,
     newValue: input,
   });
 }
@@ -1577,13 +1747,13 @@ export async function deleteExpense(
     expenseId,
     shopId,
   );
-  if (!previous) throw new Error("DÃ©pense introuvable.");
+  if (!previous) throw new Error("Dépense introuvable.");
   await db.runAsync("DELETE FROM expenses WHERE id = ? AND shop_id = ?", expenseId, shopId);
   await writeLog(db, actor, {
     action: "delete",
     entityType: "expense",
     entityId: expenseId,
-    description: `${actor.name} a retirÃ© une dÃ©pense de ${previous.amount}.`,
+    description: `${actor.name} a retiré une dépense de ${previous.amount}.`,
     oldValue: previous,
   });
 }
@@ -1608,7 +1778,7 @@ export async function saveProduct(
 ): Promise<void> {
   const shopId = await resolveShopId(db);
   const timestamp = now();
-  await ensureCategory(db, input.category.trim() || "GÃ©nÃ©ral", timestamp, shopId);
+  await ensureCategory(db, input.category.trim() || "Général", timestamp, shopId);
   if (productId) {
     const previous = await db.getFirstAsync<Product>(
       "SELECT * FROM products WHERE id = ? AND shop_id = ?",
@@ -1621,7 +1791,7 @@ export async function saveProduct(
        low_stock_threshold = ?, tracks_stock = ?, updated_at = ? WHERE id = ? AND shop_id = ?`,
       input.name.trim(),
       input.sku?.trim() || null,
-      input.category.trim() || "GÃ©nÃ©ral",
+      input.category.trim() || "Général",
       input.price,
       input.lowStockThreshold,
       input.tracksStock ? 1 : 0,
@@ -1633,7 +1803,7 @@ export async function saveProduct(
       action: "update",
       entityType: "product",
       entityId: productId,
-      description: `${actor.name} a modifiÃ© le produit ${input.name.trim()}.`,
+      description: `${actor.name} a modifié le produit ${input.name.trim()}.`,
       oldValue: previous,
       newValue: input,
     });
@@ -1647,7 +1817,7 @@ export async function saveProduct(
     shopId,
     input.name.trim(),
     input.sku?.trim() || null,
-    input.category.trim() || "GÃ©nÃ©ral",
+    input.category.trim() || "Général",
     input.price,
     input.stock,
     input.lowStockThreshold,
@@ -1673,8 +1843,8 @@ export async function saveProduct(
     entityType: "product",
     entityId: result.lastInsertRowId,
     description: input.tracksStock
-      ? `${actor.name} a ajoutÃ© le produit ${input.name.trim()} avec ${input.stock} unitÃ©(s).`
-      : `${actor.name} a ajoutÃ© le produit ${input.name.trim()} avec un stock illimitÃ©.`,
+      ? `${actor.name} a ajouté le produit ${input.name.trim()} avec ${input.stock} unité(s).`
+      : `${actor.name} a ajouté le produit ${input.name.trim()} avec un stock illimité.`,
     newValue: input,
   });
 }
@@ -1687,9 +1857,9 @@ export async function adjustStock(
   actor: User,
 ): Promise<void> {
   if (!product.tracks_stock) {
-    throw new Error("Ce produit a un stock illimitÃ©.");
+    throw new Error("Ce produit a un stock illimité.");
   }
-  if (newStock < 0) throw new Error("Le stock ne peut pas Ãªtre nÃ©gatif.");
+  if (newStock < 0) throw new Error("Le stock ne peut pas être négatif.");
   const delta = newStock - product.stock;
   const shopId = product.shop_id ?? (await resolveShopId(db));
   await withWriteTransaction(db, async (transaction) => {
@@ -1718,7 +1888,7 @@ export async function adjustStock(
       action: "stock_adjust",
       entityType: "product",
       entityId: product.id,
-      description: `${actor.name} a ajustÃ© le stock de ${product.name} : ${product.stock} â†’ ${newStock}.`,
+      description: `${actor.name} a ajusté le stock de ${product.name} : ${product.stock} → ${newStock}.`,
       oldValue: { stock: product.stock },
       newValue: { stock: newStock, reason: reason.trim() },
     });
@@ -1741,7 +1911,7 @@ export async function archiveProduct(
     action: "archive",
     entityType: "product",
     entityId: product.id,
-    description: `${actor.name} a archivÃ© le produit ${product.name}.`,
+    description: `${actor.name} a archivé le produit ${product.name}.`,
     oldValue: { is_active: 1 },
     newValue: { is_active: 0 },
   });
@@ -1791,7 +1961,7 @@ export async function saveClient(
       action: "update",
       entityType: "client",
       entityId: clientId,
-      description: `${actor.name} a modifiÃ© la fiche client de ${input.name.trim()}.`,
+      description: `${actor.name} a modifié la fiche client de ${input.name.trim()}.`,
       oldValue: previous,
       newValue: input,
     });
@@ -1812,7 +1982,7 @@ export async function saveClient(
     action: "create",
     entityType: "client",
     entityId: result.lastInsertRowId,
-    description: `${actor.name} a ajoutÃ© le client ${input.name.trim()} (${input.phone.trim()}).`,
+    description: `${actor.name} a ajouté le client ${input.name.trim()} (${input.phone.trim()}).`,
     newValue: input,
   });
   return result.lastInsertRowId;
@@ -1831,7 +2001,7 @@ export async function deleteClient(
   );
   if ((appointments?.count ?? 0) > 0) {
     throw new Error(
-      "Ce client est liÃ© Ã  lâ€™historique des rendez-vous. Sa fiche doit Ãªtre conservÃ©e.",
+      "Ce client est lié à l’historique des rendez-vous. Sa fiche doit être conservée.",
     );
   }
   await db.runAsync("DELETE FROM clients WHERE id = ? AND shop_id = ?", client.id, shopId);
@@ -1839,7 +2009,7 @@ export async function deleteClient(
     action: "delete",
     entityType: "client",
     entityId: client.id,
-    description: `${actor.name} a supprimÃ© la fiche client de ${client.name}.`,
+    description: `${actor.name} a supprimé la fiche client de ${client.name}.`,
     oldValue: client,
   });
 }
@@ -1884,14 +2054,14 @@ export async function saveAppointment(
     input.clientId,
     shopId,
   );
-  if (!client) throw new Error("Le client choisi nâ€™existe plus.");
+  if (!client) throw new Error("Le client choisi n’existe plus.");
   if (input.productId) {
     const product = await db.getFirstAsync<Product>(
       "SELECT * FROM products WHERE id = ? AND is_active = 1 AND shop_id = ?",
       input.productId,
       shopId,
     );
-    if (!product) throw new Error("Le produit choisi nâ€™est plus disponible.");
+    if (!product) throw new Error("Le produit choisi n’est plus disponible.");
   }
 
   let id = appointmentId ?? 0;
@@ -1920,7 +2090,7 @@ export async function saveAppointment(
       action: "update",
       entityType: "appointment",
       entityId: appointmentId,
-      description: `${actor.name} a modifiÃ© le rendez-vous de ${client.name}.`,
+      description: `${actor.name} a modifié le rendez-vous de ${client.name}.`,
       oldValue: previous,
       newValue: input,
     });
@@ -1945,7 +2115,7 @@ export async function saveAppointment(
       action: "create",
       entityType: "appointment",
       entityId: id,
-      description: `${actor.name} a crÃ©Ã© un rendez-vous pour ${client.name}.`,
+      description: `${actor.name} a créé un rendez-vous pour ${client.name}.`,
       newValue: input,
     });
   }
@@ -1955,7 +2125,7 @@ export async function saveAppointment(
     id,
   );
   if (!appointment) {
-    throw new Error("Le rendez-vous a Ã©tÃ© enregistrÃ© mais ne peut pas Ãªtre relu.");
+    throw new Error("Le rendez-vous a été enregistré mais ne peut pas être relu.");
   }
   return appointment;
 }
@@ -1989,12 +2159,12 @@ export async function updateAppointmentStatus(
     shopId,
   );
   const label =
-    status === "completed" ? "terminÃ©" : status === "cancelled" ? "annulÃ©" : "planifiÃ©";
+    status === "completed" ? "terminé" : status === "cancelled" ? "annulé" : "planifié";
   await writeLog(db, actor, {
     action: "status_change",
     entityType: "appointment",
     entityId: appointment.id,
-    description: `${actor.name} a marquÃ© le rendez-vous de ${appointment.client_name} comme ${label}.`,
+    description: `${actor.name} a marqué le rendez-vous de ${appointment.client_name} comme ${label}.`,
     oldValue: { status: appointment.status },
     newValue: { status },
   });
@@ -2046,7 +2216,7 @@ export async function createOrder(
       shopId,
     );
     if (!employee) {
-      throw new Error("Choisissez un employÃ© actif pour attribuer la vente.");
+      throw new Error("Choisissez un employé actif pour attribuer la vente.");
     }
     let total = 0;
     const checked: Array<{ line: CartLine; current: Product }> = [];
@@ -2056,7 +2226,7 @@ export async function createOrder(
         line.product.id,
         shopId,
       );
-      if (!current) throw new Error(`${line.product.name} nâ€™est plus disponible.`);
+      if (!current) throw new Error(`${line.product.name} n’est plus disponible.`);
       if (current.tracks_stock && line.quantity > current.stock) {
         throw new Error(
           `Stock insuffisant pour ${current.name} : ${current.stock} disponible(s).`,
@@ -2124,7 +2294,7 @@ export async function createOrder(
       action: "sale",
       entityType: "order",
       entityId: createdOrderId,
-      description: `${actor.name} a encaissÃ© la commande ${orderNumber} pour ${employee.name} â€” ${total} FC â€” ${paymentMethod === "cash" ? "EspÃ¨ces" : paymentMethod === "card" ? "Carte" : "Mobile Money"}.`,
+      description: `${actor.name} a encaissé la commande ${orderNumber} pour ${employee.name} — ${total} FC — ${paymentMethod === "cash" ? "Espèces" : paymentMethod === "card" ? "Carte" : "Mobile Money"}.`,
       newValue: {
         orderNumber,
         clientId,
@@ -2154,7 +2324,7 @@ export async function createOrder(
     createdOrderId,
     shopId,
   );
-  if (!order) throw new Error("La commande a Ã©tÃ© crÃ©Ã©e mais ne peut pas Ãªtre relue.");
+  if (!order) throw new Error("La commande a été créée mais ne peut pas être relue.");
   return order;
 }
 
@@ -2229,12 +2399,12 @@ export async function getStatistics(
       ),
       db.getAllAsync<StatisticsData["topEmployees"][number]>(
         `SELECT o.employee_id AS id,
-          COALESCE(o.employee_name, e.name, 'Non attribuÃ©e') AS name,
+          COALESCE(o.employee_name, e.name, 'Non attribuée') AS name,
           COUNT(*) AS orderCount, SUM(o.total) AS revenue
          FROM orders o
          LEFT JOIN employees e ON e.id = o.employee_id
          WHERE o.created_at >= ? AND o.shop_id = ?
-         GROUP BY o.employee_id, COALESCE(o.employee_name, e.name, 'Non attribuÃ©e')
+         GROUP BY o.employee_id, COALESCE(o.employee_name, e.name, 'Non attribuée')
          ORDER BY revenue DESC, orderCount DESC
          LIMIT 8`,
         startAt,
@@ -2402,6 +2572,55 @@ export async function listLogs(
   );
 }
 
+export interface NotificationLogInput {
+  type: string;
+  title: string;
+  body: string;
+  scheduledFor?: string | null;
+  deliveredAt?: string | null;
+}
+
+export async function logNotification(
+  db: SQLiteDatabase,
+  input: NotificationLogInput,
+): Promise<void> {
+  const shopId = await resolveShopId(db);
+  const timestamp = now();
+  await db.runAsync(
+    `INSERT INTO notification_logs
+      (shop_id, type, title, body, scheduled_for, delivered_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    shopId,
+    input.type,
+    input.title,
+    input.body,
+    input.scheduledFor ?? null,
+    input.deliveredAt ?? null,
+    timestamp,
+  );
+}
+
+export async function listNotificationLogs(
+  db: SQLiteDatabase,
+  limit = 100,
+): Promise<NotificationLog[]> {
+  const shopId = await resolveShopId(db);
+  return db.getAllAsync<NotificationLog>(
+    "SELECT * FROM notification_logs WHERE shop_id = ? ORDER BY created_at DESC LIMIT ?",
+    shopId,
+    limit,
+  );
+}
+
+export async function markNotificationsRead(db: SQLiteDatabase): Promise<void> {
+  const shopId = await resolveShopId(db);
+  await db.runAsync(
+    "UPDATE notification_logs SET read_at = ? WHERE shop_id = ? AND read_at IS NULL",
+    now(),
+    shopId,
+  );
+}
+
 export async function getSetting(
   db: SQLiteDatabase,
   key: string,
@@ -2429,7 +2648,7 @@ export async function setSetting(
   await writeLog(db, actor, {
     action: "update",
     entityType: "setting",
-    description: `${actor.name} a modifiÃ© le paramÃ¨tre ${key}.`,
+    description: `${actor.name} a modifié le paramètre ${key}.`,
     oldValue: { value: previous },
     newValue: { value },
   });
@@ -2444,7 +2663,7 @@ export async function seedDemoData(
      WHERE sku IN ('RIZ-5KG', 'HUILE-1L', 'SAVON-MEN', 'SUCRE-1KG')`,
   );
   if ((existing?.count ?? 0) > 0) {
-    throw new Error("Les donnÃ©es de dÃ©monstration ont dÃ©jÃ  Ã©tÃ© ajoutÃ©es.");
+    throw new Error("Les données de démonstration ont déjà été ajoutées.");
   }
   const products: ProductInput[] = [
     {
@@ -2466,7 +2685,7 @@ export async function seedDemoData(
       tracksStock: true,
     },
     {
-      name: "Savon de mÃ©nage",
+      name: "Savon de ménage",
       sku: "SAVON-MEN",
       category: "Maison",
       price: 2500,
@@ -2495,6 +2714,52 @@ export async function seedDemoData(
   await writeLog(db, actor, {
     action: "seed",
     entityType: "database",
-    description: `${actor.name} a chargÃ© les donnÃ©es de dÃ©monstration.`,
+    description: `${actor.name} a chargé les données de démonstration.`,
   });
+}
+
+export async function getDaySummary(
+  db: SQLiteDatabase,
+): Promise<{
+  orders: number;
+  revenue: number;
+  clients: number;
+  expenses: number;
+  items: number;
+}> {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const startIso = start.toISOString();
+  const shopId = getCurrentShopId() ?? "";
+  const row = await db.getFirstAsync<{
+    orders: number;
+    revenue: number;
+    items: number;
+    clients: number;
+    expenses: number;
+  }>(
+    `SELECT
+       (SELECT COUNT(*) FROM orders WHERE shop_id = ? AND created_at >= ?) AS orders,
+       (SELECT COALESCE(SUM(total), 0) FROM orders WHERE shop_id = ? AND created_at >= ?) AS revenue,
+       (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.shop_id = ? AND o.created_at >= ?) AS items,
+       (SELECT COUNT(*) FROM clients WHERE shop_id = ? AND created_at >= ?) AS clients,
+       (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE shop_id = ? AND created_at >= ?) AS expenses`,
+    shopId,
+    startIso,
+    shopId,
+    startIso,
+    shopId,
+    startIso,
+    shopId,
+    startIso,
+    shopId,
+    startIso,
+  );
+  return {
+    orders: row?.orders ?? 0,
+    revenue: row?.revenue ?? 0,
+    items: row?.items ?? 0,
+    clients: row?.clients ?? 0,
+    expenses: row?.expenses ?? 0,
+  };
 }

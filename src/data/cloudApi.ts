@@ -8,8 +8,13 @@ import {
   restoreBackupPayload,
   type BackupFile,
 } from "./backup";
-import { dueBusinessDate, manualBusinessDate, shouldOfferRemoteRestore } from "../domain/cloudBackup";
-import { getDeviceId, getSession, getWorkerUrl, saveSession, type CloudSession } from "./cloudSession";
+import {
+  dueBusinessDate,
+  manualBusinessDate,
+  normalizeBackupFrequency,
+  shouldOfferRemoteRestore,
+} from "../domain/cloudBackup";
+import { getDeviceId, getSession, getWorkerUrl, saveSession, type CloudSession, type PlanPermissions } from "./cloudSession";
 import { getCurrentShopId } from "./shopContext";
 
 const LAST_SUCCESS_DATE_KEY = "cloud_backup_last_success_date";
@@ -34,7 +39,7 @@ export interface CloudBackupUpdate {
 
 export interface CloudBackupStatus {
   configured: boolean;
-  username: string | null;
+  email: string | null;
   lastSuccessDate: string | null;
   lastSuccessAt: string | null;
   pendingDate: string | null;
@@ -88,13 +93,20 @@ function wait(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  );
+}
+
 async function fetchJson(
   url: string,
   init: RequestInit,
   opts: { attempts?: number; timeoutMs?: number } = {},
 ): Promise<{ status: number; body: unknown }> {
-  const attempts = Math.max(1, opts.attempts ?? 3);
-  const timeoutMs = Math.max(3_000, opts.timeoutMs ?? 12_000);
+  const attempts = Math.max(1, opts.attempts ?? 2);
+  const timeoutMs = Math.max(3_000, opts.timeoutMs ?? 6_000);
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const controller = new AbortController();
@@ -102,7 +114,8 @@ async function fetchJson(
     try {
       const res = await fetch(url, { ...init, signal: controller.signal });
       const body = await res.json().catch(() => null);
-      if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+      if (res.status >= 400 && res.status < 500) {
+        // 4xx (dont 401/429) : renvoyer la réponse telle quelle, sans réessayer.
         return { status: res.status, body };
       }
       if (!res.ok) {
@@ -115,7 +128,12 @@ async function fetchJson(
     } finally {
       clearTimeout(timeout);
     }
-    if (attempt < attempts) await wait(450 * attempt);
+    if (attempt < attempts) await wait(250 * attempt);
+  }
+  if (isAbortError(lastError)) {
+    throw new Error(
+      "Le service met trop de temps à répondre. Vérifiez votre connexion puis réessayez.",
+    );
   }
   throw lastError instanceof Error
     ? lastError
@@ -150,54 +168,255 @@ function safeError(body: unknown, fallback: string): string {
 
 // --- Comptes ---
 export async function registerAccount(
-  username: string,
+  email: string,
   password: string,
   shopName: string,
 ): Promise<CloudSession> {
   const { status, body } = await fetchJson(`${await apiBase()}/api/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password, shop_name: shopName }),
-  });
-  const data = body as { ok?: boolean; account?: { account_id?: string; username?: string; shop_name?: string; token?: string } };
+    body: JSON.stringify({ email, password, shop_name: shopName }),
+  }, { attempts: 2, timeoutMs: 20_000 });
+  const data = body as { ok?: boolean; account?: { account_id?: string; email?: string; shop_name?: string; email_verified?: boolean; subscription_type?: string; subscription_expires_at?: string; token?: string } };
   if (status >= 400 || !data?.ok || !data.account?.account_id) {
     throw new Error(safeError(body, "Création du compte impossible."));
   }
   const session: CloudSession = {
     accountId: data.account.account_id,
-    username: data.account.username ?? username,
+    email: data.account.email ?? email,
+    emailVerified: Boolean(data.account.email_verified),
     shopName: data.account.shop_name ?? shopName,
+    subscriptionType: data.account.subscription_type ?? undefined,
+    subscriptionExpiresAt: data.account.subscription_expires_at ?? undefined,
     token: data.account.token,
   };
   await saveSession(session);
   return session;
 }
 
-export async function loginAccount(username: string, password: string): Promise<CloudSession> {
+export async function loginAccount(email: string, password: string): Promise<CloudSession> {
   const { status, body } = await fetchJson(`${await apiBase()}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  const data = body as { ok?: boolean; account?: { account_id?: string; username?: string; shop_name?: string; token?: string } };
+    body: JSON.stringify({ email, password }),
+  }, { attempts: 2, timeoutMs: 20_000 });
+  const data = body as { ok?: boolean; account?: { account_id?: string; email?: string; shop_name?: string; email_verified?: boolean; subscription_type?: string; subscription_expires_at?: string; token?: string } };
   if (status >= 400 || !data?.ok || !data.account?.account_id) {
     throw new Error(safeError(body, "Connexion impossible."));
   }
   const session: CloudSession = {
     accountId: data.account.account_id,
-    username: data.account.username ?? username,
+    email: data.account.email ?? email,
+    emailVerified: Boolean(data.account.email_verified),
     shopName: data.account.shop_name ?? "Ma boutique",
+    subscriptionType: data.account.subscription_type ?? undefined,
+    subscriptionExpiresAt: data.account.subscription_expires_at ?? undefined,
     token: data.account.token,
   };
   await saveSession(session);
   return session;
+}
+
+export async function verifyEmail(
+  accountId: string,
+  code: string,
+): Promise<{ emailVerified: boolean }> {
+  const { status, body } = await fetchJson(`${await apiBase()}/api/auth/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ account_id: accountId, code: code.trim() }),
+  }, { attempts: 2, timeoutMs: 20_000 });
+  const data = body as { ok?: boolean; email_verified?: boolean };
+  if (status >= 400 || !data?.ok) {
+    throw new Error(safeError(body, "Code incorrect ou expiré."));
+  }
+  const verified = Boolean(data.email_verified);
+  if (verified) await saveSession({ ...((await getSession()) ?? ({} as CloudSession)), emailVerified: true });
+  return { emailVerified: verified };
+}
+
+export async function resendVerification(accountId: string): Promise<void> {
+  const { status, body } = await fetchJson(`${await apiBase()}/api/auth/resend`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ account_id: accountId }),
+  });
+  if (status >= 400) {
+    throw new Error(safeError(body, "Renvoi du code impossible."));
+  }
+}
+
+export interface SubscriptionStatus {
+  type: string;
+  expiresAt: string;
+  active: boolean;
+  permissions?: PlanPermissions;
+  devices?: number;
+  devicesLimit?: number;
+  deviceIds?: string[];
+}
+
+export async function getSubscription(accountId: string): Promise<SubscriptionStatus> {
+  const { status, body } = await fetchJson(
+    `${await apiBase()}/api/auth/subscription?account_id=${encodeURIComponent(accountId)}`,
+    { method: "GET", headers: { ...(await authHeaders()) } },
+    { attempts: 2, timeoutMs: 6_000 },
+  );
+  const data = body as { subscription?: { type?: string; expires_at?: string; active?: boolean; permissions?: PlanPermissions; devices?: number; devices_limit?: number; device_ids?: string[] } };
+  if (status !== 200 || !data.subscription) {
+    return { type: "", expiresAt: "", active: false };
+  }
+  const result: SubscriptionStatus = {
+    type: data.subscription.type ?? "",
+    expiresAt: data.subscription.expires_at ?? "",
+    active: Boolean(data.subscription.active),
+    permissions: data.subscription.permissions,
+    devices: data.subscription.devices,
+    devicesLimit: data.subscription.devices_limit,
+    deviceIds: data.subscription.device_ids,
+  };
+  // Stockage local (hors-ligne) des permissions
+  const session = await getSession();
+  if (session && result.type) {
+    await saveSession({ ...session, subscriptionType: result.type, subscriptionExpiresAt: result.expiresAt, subscriptionPermissions: result.permissions, subscriptionDevices: result.devices, subscriptionDevicesLimit: result.devicesLimit });
+  }
+  return result;
+}
+
+export async function applySubscriptionCode(
+  accountId: string,
+  code: string,
+): Promise<SubscriptionStatus> {
+  const { status, body } = await fetchJson(`${await apiBase()}/api/auth/apply-code`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ account_id: accountId, code: code.trim().toUpperCase() }),
+  });
+  const data = body as { ok?: boolean; subscription?: { type?: string; expires_at?: string; active?: boolean } };
+  if (status >= 400 || !data?.ok) {
+    throw new Error(safeError(body, "Code d’abonnement invalide."));
+  }
+  const result: SubscriptionStatus = {
+    type: data.subscription?.type ?? "",
+    expiresAt: data.subscription?.expires_at ?? "",
+    active: Boolean(data.subscription?.active),
+  };
+  // Stockage local pour l'accès hors-ligne
+  const session = await getSession();
+  if (session) {
+    await saveSession({ ...session, subscriptionType: result.type, subscriptionExpiresAt: result.expiresAt });
+  }
+  // Rafraîchit les permissions du plan (tablettes, rapports, tickets…).
+  await getSubscription(accountId).catch(() => null);
+  return result;
+}
+
+export interface MerchantProfile {
+  shop_name?: string;
+  shop_phone?: string;
+  shop_whatsapp?: string;
+  shop_city?: string;
+  shop_sector?: string;
+  shop_email?: string;
+  shop_website?: string;
+  shop_address?: string;
+  partner_share_accepted?: boolean;
+  updated_at?: string;
+}
+
+const PROFILE_KEYS = [
+  "shop_name",
+  "shop_phone",
+  "shop_whatsapp",
+  "shop_city",
+  "shop_sector",
+  "shop_email",
+  "shop_website",
+  "shop_address",
+  "partner_share_accepted",
+] as const;
+
+function readProfileSettings(db: SQLiteDatabase): Promise<Record<string, string>> {
+  const placeholders = PROFILE_KEYS.map(() => "?").join(", ");
+  return db
+    .getAllAsync<{ key: string; value: string }>(
+      `SELECT key, value FROM settings WHERE key IN (${placeholders})`,
+      ...PROFILE_KEYS,
+    )
+    .then((rows) => {
+      const map: Record<string, string> = {};
+      for (const row of rows) map[row.key] = row.value;
+      return map;
+    });
+}
+
+// Pousse le profil établissement vers le cloud (si connecté). Ne bloque jamais.
+export async function pushMerchantProfile(db: SQLiteDatabase): Promise<void> {
+  const session = await getSession().catch(() => null);
+  if (!session?.accountId) return;
+  const values = await readProfileSettings(db);
+  const profile: MerchantProfile = {
+    shop_name: values.shop_name ?? "",
+    shop_phone: values.shop_phone ?? "",
+    shop_whatsapp: values.shop_whatsapp ?? "",
+    shop_city: values.shop_city ?? "",
+    shop_sector: values.shop_sector ?? "",
+    shop_email: values.shop_email ?? "",
+    shop_website: values.shop_website ?? "",
+    shop_address: values.shop_address ?? "",
+    partner_share_accepted: values.partner_share_accepted === "1",
+    updated_at: new Date().toISOString(),
+  };
+  await fetchJson(`${await apiBase()}/api/account/profile`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ account_id: session.accountId, profile }),
+  }, { attempts: 2, timeoutMs: 6_000 });
+}
+
+// Vérifie les changements côté cloud et rafraîchit les champs manquants.
+export async function syncMerchantProfile(db: SQLiteDatabase): Promise<void> {
+  const session = await getSession().catch(() => null);
+  if (!session?.accountId) return;
+  const { status, body } = await fetchJson(
+    `${await apiBase()}/api/account/profile?account_id=${encodeURIComponent(session.accountId)}`,
+    { method: "GET", headers: { ...(await authHeaders()) } },
+    { attempts: 2, timeoutMs: 6_000 },
+  );
+  const data = body as { ok?: boolean; profile?: MerchantProfile };
+  if (status !== 200 || !data?.profile) return;
+  const local = await readProfileSettings(db);
+  const updates: Array<[string, string]> = [];
+  if (!local.shop_city && data.profile.shop_city) updates.push(["shop_city", data.profile.shop_city]);
+  if (!local.shop_sector && data.profile.shop_sector) updates.push(["shop_sector", data.profile.shop_sector]);
+  if (!local.shop_whatsapp && data.profile.shop_whatsapp) updates.push(["shop_whatsapp", data.profile.shop_whatsapp]);
+  if (!local.shop_phone && data.profile.shop_phone) updates.push(["shop_phone", data.profile.shop_phone]);
+  if (updates.length > 0) {
+    await withSettingsWrites(db, updates);
+  }
+}
+
+async function withSettingsWrites(
+  db: SQLiteDatabase,
+  updates: Array<[string, string]>,
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (const [key, value] of updates) {
+      await db.runAsync(
+        `INSERT INTO settings (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        key,
+        value,
+      );
+    }
+  });
 }
 
 export async function getAccountStatus(accountId: string): Promise<AccountStatus | null> {
   const { status, body } = await fetchJson(
     `${await apiBase()}/api/accounts/status?account_id=${encodeURIComponent(accountId)}`,
     { method: "GET", headers: { ...(await authHeaders()) } },
-    { attempts: 2, timeoutMs: 8_000 },
+    { attempts: 2, timeoutMs: 6_000 },
   );
   if (status !== 200) return null;
   const data = body as { status?: AccountStatus };
@@ -209,7 +428,7 @@ export async function getCloudShops(session: CloudSession): Promise<Array<{ shop
   const { status, body } = await fetchJson(
     `${await apiBase()}/api/shops?account_id=${encodeURIComponent(session.accountId)}`,
     { method: "GET", headers: { ...(await authHeaders()) } },
-    { attempts: 2, timeoutMs: 8_000 },
+    { attempts: 2, timeoutMs: 6_000 },
   );
   if (status !== 200) return [];
   const data = body as { shops?: Array<{ shop_id: string; name: string }> };
@@ -248,11 +467,15 @@ export async function renameCloudShop(
 }
 
 // --- Sauvegardes ---
-async function getLatestRemoteBackup(accountId: string, shopId: string): Promise<CloudBackupUpdate | null> {
+async function getLatestRemoteBackup(
+  accountId: string,
+  shopId: string,
+  opts: { attempts?: number; timeoutMs?: number } = {},
+): Promise<CloudBackupUpdate | null> {
   const { status, body } = await fetchJson(
     `${await apiBase()}/api/backups/latest?account_id=${encodeURIComponent(accountId)}&shop_id=${encodeURIComponent(shopId)}`,
     { method: "GET", headers: { ...(await authHeaders()) } },
-    { attempts: 2, timeoutMs: 8_000 },
+    { attempts: opts.attempts ?? 2, timeoutMs: opts.timeoutMs ?? 8_000 },
   );
   if (status !== 200) return null;
   const data = body as { backup?: Omit<CloudBackupUpdate, "accountId"> };
@@ -273,7 +496,7 @@ async function getBackupPayload(accountId: string, shopId: string, backupId: str
   const { status, body } = await fetchJson(
     `${await apiBase()}/api/backups/${encodeURIComponent(backupId)}?account_id=${encodeURIComponent(accountId)}&shop_id=${encodeURIComponent(shopId)}`,
     { method: "GET", headers: { ...(await authHeaders()) } },
-    { attempts: 3, timeoutMs: 15_000 },
+    { attempts: 2, timeoutMs: 6_000 },
   );
   const data = body as { payload?: string };
   if (status !== 200 || !data.payload) {
@@ -286,7 +509,9 @@ export async function getRemoteBackupMetadata(
   session: CloudSession,
 ): Promise<CloudBackupUpdate | null> {
   const shopId = getCurrentShopId() ?? "";
-  return getLatestRemoteBackup(session.accountId, shopId).catch(() => null);
+  return getLatestRemoteBackup(session.accountId, shopId, { attempts: 1, timeoutMs: 4_000 }).catch(
+    () => null,
+  );
 }
 
 export async function getLocalDataAt(db: SQLiteDatabase): Promise<string | null> {
@@ -381,7 +606,7 @@ export async function getCloudBackupStatus(
     ]);
   return {
     configured: Boolean(workerUrl && session),
-    username: session?.username ?? null,
+    email: session?.email ?? null,
     lastSuccessDate,
     lastSuccessAt,
     pendingDate,
@@ -397,9 +622,18 @@ export async function syncCloudBackup(
   const now = new Date();
   const session = await getSession();
   const status = await getCloudBackupStatus(db, session);
+  const frequency = normalizeBackupFrequency(
+    session?.subscriptionPermissions?.backup,
+  );
   const businessDate = options.force
     ? manualBusinessDate(now)
-    : dueBusinessDate(now, status.lastSuccessDate, status.pendingDate);
+    : dueBusinessDate(
+        now,
+        status.lastSuccessDate,
+        status.pendingDate,
+        frequency,
+        status.lastSuccessAt,
+      );
 
   if (!businessDate) return { ...status, outcome: "not_due" };
 
@@ -448,7 +682,7 @@ export async function syncCloudBackup(
         payload: JSON.stringify(backup),
         shop_name: shopRow?.value ?? "Ma boutique",
       }),
-    }, { attempts: 3, timeoutMs: 20_000 });
+    }, { attempts: 2, timeoutMs: 6_000 });
 
     if (resStatus >= 400) {
       throw new Error(safeError(body, "Le service de sauvegarde a refusé l’envoi."));
@@ -460,7 +694,7 @@ export async function syncCloudBackup(
     await writeState(db, LAST_ERROR_KEY, null);
     return {
       configured: true,
-      username: session.username,
+      email: session.email,
       lastSuccessDate: businessDate,
       lastSuccessAt: snapshotAt,
       pendingDate: null,

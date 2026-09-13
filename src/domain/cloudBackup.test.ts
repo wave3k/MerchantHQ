@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   dueBusinessDate,
   manualBusinessDate,
+  normalizeBackupFrequency,
   shouldOfferRemoteRestore,
 } from "./cloudBackup";
 
@@ -89,5 +90,60 @@ describe("sauvegarde cloud quotidienne", () => {
         localDataAt: "2026-07-29T09:00:00.000Z",
       }),
     ).toBe(false);
+  });
+});
+
+describe("sauvegarde selon le plan", () => {
+  test("realtime : sauvegarde à toute heure, mais pas plus d’une fois par minute", () => {
+    expect(
+      dueBusinessDate(new Date(2026, 6, 28, 10, 0), null, null, "realtime"),
+    ).toBe("2026-07-28");
+    expect(
+      dueBusinessDate(
+        new Date(2026, 6, 28, 10, 0, 30),
+        "2026-07-28",
+        null,
+        "realtime",
+        new Date(2026, 6, 28, 10, 0, 0).toISOString(),
+      ),
+    ).toBe(null);
+    expect(
+      dueBusinessDate(
+        new Date(2026, 6, 28, 10, 5),
+        "2026-07-28",
+        null,
+        "realtime",
+        new Date(2026, 6, 28, 10, 0, 0).toISOString(),
+      ),
+    ).toBe("2026-07-28");
+  });
+
+  test("2x/semaine : uniquement lundi et jeudi à partir de 21 h", () => {
+    // 2026-07-27 = lundi, 2026-07-28 = mardi, 2026-07-30 = jeudi
+    expect(
+      dueBusinessDate(new Date(2026, 6, 27, 21, 0), null, null, "2x_week"),
+    ).toBe("2026-07-27");
+    expect(
+      dueBusinessDate(new Date(2026, 6, 28, 21, 0), null, null, "2x_week"),
+    ).toBe(null);
+    expect(
+      dueBusinessDate(new Date(2026, 6, 30, 22, 0), null, null, "2x_week"),
+    ).toBe("2026-07-30");
+  });
+
+  test("nightly : une fois par jour à partir de 21 h", () => {
+    expect(
+      dueBusinessDate(new Date(2026, 6, 28, 20, 0), null, null, "nightly"),
+    ).toBe(null);
+    expect(
+      dueBusinessDate(new Date(2026, 6, 28, 21, 0), null, null, "nightly"),
+    ).toBe("2026-07-28");
+  });
+
+  test("normalizeBackupFrequency retombe sur nightly", () => {
+    expect(normalizeBackupFrequency("realtime")).toBe("realtime");
+    expect(normalizeBackupFrequency("2x_week")).toBe("2x_week");
+    expect(normalizeBackupFrequency(undefined)).toBe("nightly");
+    expect(normalizeBackupFrequency("inconnu")).toBe("nightly");
   });
 });

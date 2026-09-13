@@ -32,7 +32,9 @@ export async function prepareDeviceNotifications(
   return false;
 }
 
-export async function sendTestNotification(): Promise<boolean> {
+export async function sendTestNotification(
+  _db?: SQLiteDatabase,
+): Promise<boolean> {
   return false;
 }
 

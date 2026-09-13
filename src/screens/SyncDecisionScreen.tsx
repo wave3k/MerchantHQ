@@ -1,7 +1,7 @@
 import { ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
 
 import { AppButton } from "../components/AppButton";
-import { CashRegisterIcon } from "../components/CashRegisterIcon";
+import { AppLogoImage } from "../components/AppLogoImage";
 import { TranslatedText as Text } from "../components/TranslatedText";
 import { formatDateTime } from "../domain/format";
 import { recommendedSyncAction, type SyncSituation } from "../domain/syncDecision";
@@ -30,9 +30,8 @@ export function SyncDecisionScreen({
       <View style={[styles.split, stacked && styles.splitStacked]}>
         <View style={[styles.brandPane, stacked && styles.brandPaneStacked]}>
           <View style={styles.brandCopy}>
-            <CashRegisterIcon
-              color={colors.accentInk}
-              detail={colors.inkSurfaceText}
+            <AppLogoImage
+              accessibilityLabel="MerchantHQ"
               size={84}
             />
             <Text style={styles.brand}>MerchantHQ</Text>
@@ -49,6 +48,23 @@ export function SyncDecisionScreen({
         >
           <View style={[styles.card, stacked && styles.cardStacked]}>
             <Text style={styles.title}>Que voulez-vous faire ?</Text>
+
+            <View style={styles.recommendBox}>
+              <Text style={styles.recommendTitle}>
+                {recommendation === "keep_local"
+                  ? "Recommandé : garder la tablette"
+                  : recommendation === "load_remote"
+                    ? "Recommandé : charger le compte"
+                    : "Aucune donnée à synchroniser"}
+              </Text>
+              <Text style={styles.recommendText}>
+                {recommendation === "keep_local"
+                  ? "Vos données locales sont plus récentes. Elles seront envoyées dans votre compte."
+                  : recommendation === "load_remote"
+                    ? "La sauvegarde de votre compte est plus récente. Elle sera copiée sur cette tablette."
+                    : "Choisissez librement ci-dessous."}
+              </Text>
+            </View>
 
             <View style={styles.statusRow}>
               <Text style={styles.statusLabel}>Cette tablette</Text>
@@ -122,7 +138,7 @@ function createStyles() {
   splitStacked: { flexDirection: "column" },
   brandPane: {
     alignSelf: "stretch",
-    backgroundColor: colors.ink,
+    backgroundColor: colors.panelInk,
     flex: 1,
     justifyContent: "center",
     padding: space.xxl,
@@ -139,13 +155,13 @@ function createStyles() {
   rightContent: { flexGrow: 1 },
   brandCopy: { alignItems: "center", flex: 1, gap: space.md, justifyContent: "center" },
   brand: {
-    color: colors.accentInk,
+    color: colors.onPanelInk,
     fontFamily: fonts.display,
     fontSize: 38,
     letterSpacing: -1,
   },
   promise: {
-    color: colors.inkSurfaceText,
+    color: colors.onPanelInk,
     fontFamily: fonts.body,
     fontSize: 16,
     lineHeight: 24,
@@ -167,6 +183,25 @@ function createStyles() {
   },
   cardStacked: { alignSelf: "center", margin: space.md, width: "92%" },
   title: { color: colors.ink, fontFamily: fonts.display, fontSize: 27, letterSpacing: -0.5 },
+  recommendBox: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.rule,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: space.xxs,
+    padding: space.md,
+  },
+  recommendTitle: {
+    color: colors.accentDark,
+    fontFamily: fonts.bodySemibold,
+    fontSize: 14,
+  },
+  recommendText: {
+    color: colors.ink2,
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
+  },
   statusRow: {
     alignItems: "flex-start",
     backgroundColor: colors.paper2,
