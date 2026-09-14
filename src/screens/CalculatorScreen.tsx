@@ -233,11 +233,11 @@ function ToolCard({
       <View style={styles.toolInputs}>
         <View style={styles.toolField}>
           <Text style={styles.fieldLabel}>{firstLabel}</Text>
-          <TextInput keyboardType="decimal-pad" onChangeText={onFirstChange} style={styles.toolInput} value={firstValue} />
+          <TextInput accessibilityLabel={firstLabel} keyboardType="decimal-pad" onChangeText={onFirstChange} style={styles.toolInput} value={firstValue} />
         </View>
         <View style={styles.toolField}>
           <Text style={styles.fieldLabel}>{secondLabel}</Text>
-          <TextInput keyboardType="decimal-pad" onChangeText={onSecondChange} style={styles.toolInput} value={secondValue} />
+          <TextInput accessibilityLabel={secondLabel} keyboardType="decimal-pad" onChangeText={onSecondChange} style={styles.toolInput} value={secondValue} />
         </View>
       </View>
       <View style={styles.toolResult}>

@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { StyleSheet, TextInput, View } from "react-native";
-import { colors, fonts, radius, space } from "../theme";
+import { useThemedStyles, colors, fonts, radius, space } from "../theme";
 
 interface OtpInputProps {
   length?: number;
@@ -15,6 +15,7 @@ export function OtpInput({
   onChange,
   onComplete,
 }: OtpInputProps) {
+  const styles = useThemedStyles(createStyles);
   const refs = useRef<Array<TextInput | null>>([]);
   const digits = Array.from({ length }, (_, i) => value[i] ?? "");
 
@@ -52,6 +53,7 @@ export function OtpInput({
     <View style={styles.row}>
       {digits.map((digit, index) => (
         <TextInput
+          accessibilityLabel={`Chiffre ${index + 1} sur ${length}`}
           autoCapitalize="none"
           autoCorrect={false}
           caretHidden
@@ -59,6 +61,7 @@ export function OtpInput({
           keyboardType="number-pad"
           maxLength={6}
           onChangeText={(t) => update(index, t)}
+          textContentType="oneTimeCode"
           onFocus={() => {
             // permet de modifier une case en tapant directement
             if (digits[index]) {
@@ -84,7 +87,8 @@ export function OtpInput({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles() {
+  return StyleSheet.create({
   row: {
     flexDirection: "row",
     gap: space.sm,
@@ -113,3 +117,4 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
 });
+}

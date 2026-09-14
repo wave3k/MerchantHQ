@@ -46,6 +46,7 @@ export function ModalSheet({
       >
         <Pressable
           accessibilityLabel={t("Fermer la fenêtre")}
+          accessibilityRole="button"
           onPress={onClose}
           style={StyleSheet.absoluteFill}
         />

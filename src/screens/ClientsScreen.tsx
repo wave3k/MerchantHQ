@@ -49,7 +49,14 @@ export function ClientsScreen({ db, user }: ClientsScreenProps) {
   }
 
   useEffect(() => {
-    void load();
+    void load().catch((caught) =>
+      Alert.alert(
+        "Chargement impossible",
+        caught instanceof Error
+          ? caught.message
+          : "Les clients n’ont pas pu être chargés.",
+      ),
+    );
   }, [db]);
 
   const filtered = useMemo(() => {
@@ -181,6 +188,9 @@ export function ClientsScreen({ db, user }: ClientsScreenProps) {
         <View style={styles.grid}>
           {filtered.map((client) => (
             <Pressable
+              accessibilityLabel={`${client.name}, ${client.phone}`}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !canManage }}
               disabled={!canManage}
               key={client.id}
               onPress={() => openEdit(client)}

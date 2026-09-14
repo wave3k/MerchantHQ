@@ -1,6 +1,7 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
@@ -68,6 +69,7 @@ export function AppButton({
   const styles = useThemedStyles(createStyles);
   const palette = tonePalette(tone);
   const translatedLabel = t(label);
+  const reduceMotion = useReducedMotion();
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(
     () => ({
@@ -85,7 +87,7 @@ export function AppButton({
         disabled={disabled || loading}
         onPress={onPress}
         onPressIn={() => {
-          if (!disabled && !loading) {
+          if (!disabled && !loading && !reduceMotion) {
             scale.set(withTiming(0.97, { duration: 120 }));
           }
         }}

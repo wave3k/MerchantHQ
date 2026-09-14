@@ -11,6 +11,7 @@ type Env = {
   RESEND_AUDIENCE_ID?: string;
   ADMIN_PASSWORD?: string;
   ALLOWED_ORIGINS?: string;
+  ALLOW_ACCOUNTS_RESET?: string;
 };
 
 type SqlValue = { type: string; value?: string | null };
@@ -43,6 +44,25 @@ app.use("/*", cors({
   allowHeaders: ["Content-Type", "Authorization"],
 }));
 
+app.notFound((c) => c.json({ error: "Ressource introuvable." }, 404));
+
+app.onError((error, c) => {
+  // Journalisation structurée : aucune donnée sensible, aucune stack exposée.
+  console.error(
+    JSON.stringify({
+      level: "error",
+      message: "Erreur non gérée du worker",
+      path: new URL(c.req.url).pathname,
+      method: c.req.method,
+      error: error instanceof Error ? error.message : String(error),
+    }),
+  );
+  return c.json(
+    { error: "Une erreur interne est survenue. Réessayez plus tard." },
+    500,
+  );
+});
+
 function pipelineUrl(url: string): string {
   return url.trim().replace(/^libsql:\/\//i, "https://").replace(/\/+$/, "") + "/v2/pipeline";
 }
@@ -54,20 +74,62 @@ function integer(value: number): SqlValue {
   return { type: "integer", value: String(value) };
 }
 
+class TursoQueryError extends Error {}
+
+const TURSO_TIMEOUT_MS = 8_000;
+const TURSO_MAX_ATTEMPTS = 3;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function pipeline(c: { env: Env }, requests: Request[]): Promise<PipelineResponse> {
-  const res = await fetch(pipelineUrl(c.env.TURSO_URL), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${c.env.TURSO_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ requests }),
-  });
-  if (!res.ok) throw new Error(`Turso HTTP ${res.status}`);
-  const body = (await res.json()) as PipelineResponse;
-  const failed = body.results?.find((r) => r.type === "error");
-  if (failed) throw new Error(failed.error?.message ?? "Turso n’a pas exécuté la requête.");
-  return body;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= TURSO_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TURSO_TIMEOUT_MS);
+    try {
+      const res = await fetch(pipelineUrl(c.env.TURSO_URL), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${c.env.TURSO_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ requests }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const retryable = res.status >= 500 || res.status === 429;
+        if (!retryable) {
+          throw new TursoQueryError(`Turso HTTP ${res.status}`);
+        }
+        lastError = new Error(`Turso HTTP ${res.status}`);
+        if (attempt >= TURSO_MAX_ATTEMPTS) throw lastError;
+        await delay(150 * attempt);
+        continue;
+      }
+      const body = (await res.json()) as PipelineResponse;
+      const failed = body.results?.find((r) => r.type === "error");
+      if (failed) {
+        // Erreur SQL : réessayer ne changerait rien.
+        throw new TursoQueryError(
+          failed.error?.message ?? "Turso n’a pas exécuté la requête.",
+        );
+      }
+      return body;
+    } catch (caught) {
+      if (caught instanceof TursoQueryError) throw caught;
+      // Timeout, réseau ou réponse illisible : on retente avec un backoff.
+      lastError = caught;
+      if (attempt >= TURSO_MAX_ATTEMPTS) throw caught;
+      await delay(150 * attempt);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Turso est momentanément indisponible.");
 }
 
 function rowOf(body: PipelineResponse, index: number): Record<string, string> | null {
@@ -180,6 +242,12 @@ const SCHEMA_STATEMENTS = [
     created_at TEXT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS idx_reg_log_ip ON reg_log(ip, created_at)`,
+  `CREATE TABLE IF NOT EXISTS resend_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_resend_log_ip ON resend_log(ip, created_at)`,
 ];
 
 async function tableHasColumn(c: { env: Env }, table: string, column: string): Promise<boolean> {
@@ -239,8 +307,16 @@ async function migrateBackupsSchema(c: { env: Env }): Promise<void> {
 async function migrateAccountsEmail(c: { env: Env }): Promise<void> {
   const hasEmail = await tableHasColumn(c, "accounts", "email");
   if (hasEmail) return;
+  // Migration destructive : elle ne s'exécute que si elle est explicitement
+  // autorisée. L'ancienne table est conservée (accounts_legacy) pour permettre
+  // une récupération manuelle des données.
+  if (c.env.ALLOW_ACCOUNTS_RESET !== "1") {
+    throw new Error(
+      "La réinitialisation de la table accounts nécessite ALLOW_ACCOUNTS_RESET=1.",
+    );
+  }
   await pipeline(c, [
-    { type: "execute", stmt: { sql: `ALTER TABLE accounts RENAME TO accounts_old` } },
+    { type: "execute", stmt: { sql: `ALTER TABLE accounts RENAME TO accounts_legacy` } },
     {
       type: "execute",
       stmt: {
@@ -255,7 +331,6 @@ async function migrateAccountsEmail(c: { env: Env }): Promise<void> {
         )`,
       },
     },
-    { type: "execute", stmt: { sql: `DROP TABLE accounts_old` } },
     { type: "execute", stmt: { sql: `DELETE FROM auth_tokens` } },
     { type: "close" },
   ]);
@@ -488,6 +563,27 @@ async function logRegistration(c: { env: Env }, ip: string): Promise<void> {
   ]);
 }
 
+const RESEND_MAX_PER_HOUR = 5;
+
+async function resendAllowed(c: { env: Env }, ip: string): Promise<boolean> {
+  const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const result = await pipeline(c, [
+    { type: "execute", stmt: { sql: "SELECT COUNT(*) AS c FROM resend_log WHERE ip = ? AND created_at > ?", args: [text(ip), text(cutoff)] } },
+    { type: "close" },
+  ]);
+  const row = rowOf(result, 0);
+  return (Number(row?.c) || 0) < RESEND_MAX_PER_HOUR;
+}
+
+async function logResend(c: { env: Env }, ip: string): Promise<void> {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  await pipeline(c, [
+    { type: "execute", stmt: { sql: "INSERT INTO resend_log (ip, created_at) VALUES (?, ?)", args: [text(ip), text(new Date().toISOString())] } },
+    { type: "execute", stmt: { sql: "DELETE FROM resend_log WHERE created_at < ?", args: [text(cutoff)] } },
+    { type: "close" },
+  ]);
+}
+
 async function cleanupExpiredTokens(c: { env: Env }): Promise<void> {
   const cutoff = new Date(Date.now() - TOKEN_MAX_AGE_MS).toISOString();
   await pipeline(c, [
@@ -699,14 +795,17 @@ async function authorize(c: { req: { header: (n: string) => string | undefined }
 }
 
 function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  // Comparaison sans sortie anticipée pour limiter les fuites temporelles.
+  let diff = a.length ^ b.length;
+  const max = Math.max(a.length, b.length);
+  for (let i = 0; i < max; i += 1) {
+    diff |= (a.charCodeAt(i) | 0) ^ (b.charCodeAt(i) | 0);
+  }
   return diff === 0;
 }
 
 async function verifyPassword(password: string, saltHex: string, expected: string): Promise<boolean> {
-  if (!expected) return password.length === 0;
+  if (!expected) return false;
   const parts = expected.split("$");
   if (parts[0] !== "pbkdf2-v2" || parts.length !== 3) return false;
   const iterations = Number.parseInt(parts[1] ?? "", 10);
@@ -839,7 +938,7 @@ app.post("/api/auth/verify", async (c) => {
     return c.json({ error: "Code expiré. Demandez un nouveau code." }, 400);
   }
   const hash = await hashCode(code);
-  if (hash !== row.code_hash) {
+  if (!safeEqual(hash, row.code_hash ?? "")) {
     await pipeline(c, [
       { type: "execute", stmt: { sql: "UPDATE email_verifications SET attempts = attempts + 1 WHERE account_id = ?", args: [text(accountId)] } },
       { type: "close" },
@@ -877,6 +976,11 @@ app.post("/api/auth/resend", async (c) => {
   const accountId = (body.account_id ?? "").trim();
   if (!accountId) return c.json({ error: "account_id requis." }, 400);
   await ensureSchema(c);
+  const ip = c.req.header("cf-connecting-ip") ?? "unknown";
+  if (!(await resendAllowed(c, ip))) {
+    return c.json({ error: "Trop de demandes de code. Réessayez plus tard." }, 429);
+  }
+  await logResend(c, ip);
   const account = await pipeline(c, [
     { type: "execute", stmt: { sql: "SELECT email, shop_name FROM accounts WHERE account_id = ?", args: [text(accountId)] } },
     { type: "close" },
@@ -1354,6 +1458,21 @@ app.post("/api/backups", async (c) => {
   if (!(await authorize(c, account_id))) return c.json({ error: "Non autorisé." }, 401);
   if (!(await isAccountVerified(c, account_id))) return c.json({ error: "Vérifiez votre adresse e-mail pour utiliser le cloud." }, 403);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(business_date)) return c.json({ error: "business_date invalide (YYYY-MM-DD)." }, 400);
+  const snapshotMs = Date.parse(snapshot_at);
+  if (Number.isNaN(snapshotMs)) {
+    return c.json({ error: "snapshot_at invalide (ISO 8601)." }, 400);
+  }
+  if (snapshotMs > Date.now() + 5 * 60 * 1000) {
+    return c.json({ error: "snapshot_at est dans le futur." }, 400);
+  }
+  if (
+    device_id.length > 120 ||
+    (shop_id ?? "").length > 120 ||
+    (app_version ?? "").length > 40
+  ) {
+    return c.json({ error: "Identifiants de sauvegarde trop longs." }, 400);
+  }
+  const snapshotAt = new Date(snapshotMs).toISOString();
   await ensureSchema(c);
   const resolvedShopId = shop_id ?? "";
   const backupId = `${account_id}:${resolvedShopId}:${business_date}`;
@@ -1369,7 +1488,7 @@ app.post("/api/backups", async (c) => {
                 app_version = excluded.app_version,
                 schema_version = excluded.schema_version,
                 payload = excluded.payload`,
-        args: [text(backupId), text(account_id), text(resolvedShopId), text(device_id), text(business_date), text(snapshot_at), text(app_version ?? "0.1.0"), integer(schema_version ?? 0), text(payload)],
+        args: [text(backupId), text(account_id), text(resolvedShopId), text(device_id), text(business_date), text(snapshotAt), text(app_version ?? "0.1.0"), integer(schema_version ?? 0), text(payload)],
       },
     },
     {
@@ -1387,7 +1506,7 @@ app.post("/api/backups", async (c) => {
                 app_version = excluded.app_version,
                 schema_version = excluded.schema_version
               WHERE excluded.snapshot_at >= commerce_latest_backup.snapshot_at`,
-        args: [text(account_id), text(resolvedShopId), text(backupId), text(device_id), text(business_date), text(snapshot_at), text(app_version ?? "0.1.0"), integer(schema_version ?? 0)],
+        args: [text(account_id), text(resolvedShopId), text(backupId), text(device_id), text(business_date), text(snapshotAt), text(app_version ?? "0.1.0"), integer(schema_version ?? 0)],
       },
     },
     {
@@ -1399,7 +1518,7 @@ app.post("/api/backups", async (c) => {
                 has_data = 1,
                 last_backup_at = excluded.last_backup_at,
                 last_backup_business_date = excluded.last_backup_business_date`,
-        args: [text(account_id), text(snapshot_at), text(business_date)],
+        args: [text(account_id), text(snapshotAt), text(business_date)],
       },
     },
     ...(shop_name

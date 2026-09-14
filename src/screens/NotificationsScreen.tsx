@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import {
+  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -54,7 +55,14 @@ export function NotificationsScreen({ db }: NotificationsScreenProps) {
   }
 
   useEffect(() => {
-    void load();
+    void load().catch((caught) =>
+      Alert.alert(
+        "Chargement impossible",
+        caught instanceof Error
+          ? caught.message
+          : "Les notifications n’ont pas pu être chargées.",
+      ),
+    );
   }, [db]);
 
   const unreadCount = useMemo(

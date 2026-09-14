@@ -539,6 +539,10 @@ export function OrdersScreen({
               key={columns}
               keyExtractor={(item) => String(item.id)}
               numColumns={columns}
+              initialNumToRender={columns * 6}
+              maxToRenderPerBatch={columns * 6}
+              removeClippedSubviews
+              windowSize={7}
               renderItem={({ item }) => {
                 const inCart =
                   cart.find((line) => line.product.id === item.id)?.quantity ?? 0;

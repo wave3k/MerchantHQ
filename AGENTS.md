@@ -1,13 +1,33 @@
-# Agent rules — Commerce-Manager (app)
+# Agent rules — MerchantHQ (app)
+
+Périmètre : **tout le travail vit dans ce dossier (MerchantHQ)** — app mobile, worker
+Cloudflare intégré. Le projet **Renaissance Manager** (ancien dossier
+`../Commerce Manager`) est **abandonné** : ne plus y travailler.
+
+Tous les skills installés sont consolidés ici dans `.agents/skills` (97 skills :
+généraux, Expo/EAS, Cloudflare). Ce dossier est la racine de travail.
 
 Voir les instructions générales dans `../Developement/AGENTS.md` (ou `~/Documents/My Docs/Developement/AGENTS.md`).
 
 ## Règle skills (OBLIGATOIRE)
-- **Avant chaque tâche** : vérifier si un skill disponible peut aider → l'utiliser.
-- **Site web / interface / UI-UX / design** : charger et appliquer les skills UI/UX
-  (better-ui, better-accessibility, better-colors, better-interface, better-layout,
-  better-typography, better-writing, interface-review, variant — installés dans
-  `.agents/skills`).
+- **Avant CHAQUE tâche** : passer en revue les skills disponibles dans `.agents/skills`
+  et vérifier si au moins un peut aider. Si oui → **le charger et l'appliquer AVANT de
+  coder** (outil `skill`, ou lecture du `SKILL.md` du dossier concerné).
+- Ne jamais commencer une tâche non triviale sans avoir fait cette vérification.
+- Correspondances fréquentes :
+  - **UI / UX / design / CSS / composants** → `better-ui`, `better-interface`, `better-layout`,
+    `better-typography`, `better-colors`, `better-accessibility`, `interface-review`,
+    `apple-design`, `emil-design-eng`
+  - **Animation / motion** → `animate`, `animate-expo`, `review-animations`, `improve-animations`
+  - **Accessibilité (a11y)** → `accessibility-scan`, `accessibility-inspect`, `accessibility-fix`
+  - **Expo / React Native** → `expo-router`, `expo-ui`, `expo-native-ui`, `expo-design-system`,
+    `expo-animation`, `expo-data-fetching`, `react-native-best-practices`
+  - **Build / déploiement mobile** → `eas-update`, `eas-app-stores`, `expo-dev-client`
+  - **Worker Cloudflare / API** → `workers-best-practices`, `wrangler`, `cloudflare`, `durable-objects`
+  - **Tests / qualité / refactor** → `test-driven-development`, `code-review-and-quality`,
+    `code-simplification`, `debugging-and-error-recovery`, `incremental-implementation`
+  - **Sécurité / performance** → `security-and-hardening`, `performance-optimization`
+  - **Rédaction / textes** → `humanize`, `better-writing`
 - Vérifier le rendu avec Playwright après toute modif UI.
 
 ## Responsive (OBLIGATOIRE)

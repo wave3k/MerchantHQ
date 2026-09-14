@@ -90,7 +90,14 @@ export function ProductsScreen({ db, user }: ProductsScreenProps) {
   }
 
   useEffect(() => {
-    void load();
+    void load().catch((caught) =>
+      Alert.alert(
+        "Chargement impossible",
+        caught instanceof Error
+          ? caught.message
+          : "Les produits n’ont pas pu être chargés.",
+      ),
+    );
   }, [db]);
 
   const filtered = useMemo(() => {

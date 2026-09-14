@@ -179,7 +179,8 @@ export const radius = {
 export const shadow = Platform.select({
   android: { elevation: 2 },
   default: {
-    shadowColor: activeTheme === "dark" ? "#000000" : "#13233C",
+    // Couleur neutre : l’ombre reste cohérente dans les deux thèmes.
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 2,

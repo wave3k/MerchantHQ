@@ -2,6 +2,8 @@ import type { Role, ScreenKey, User } from "../types";
 
 export type Permission =
   | "dashboard.full"
+  | "calculator.use"
+  | "notifications.view"
   | "orders.view"
   | "orders.create"
   | "products.view"
@@ -40,6 +42,8 @@ const rolePermissions: Record<Role, ReadonlySet<Permission>> = {
     "logs.view",
     "tickets.manage",
     "backup.manage",
+    "calculator.use",
+    "notifications.view",
   ]),
   manager: new Set<Permission>([
     "dashboard.full",
@@ -57,6 +61,8 @@ const rolePermissions: Record<Role, ReadonlySet<Permission>> = {
     "statistics.view",
     "expenses.manage",
     "logs.view",
+    "calculator.use",
+    "notifications.view",
   ]),
   cashier: new Set<Permission>([
     "orders.view",
@@ -65,6 +71,8 @@ const rolePermissions: Record<Role, ReadonlySet<Permission>> = {
     "clients.view",
     "clients.create",
     "appointments.view",
+    "calculator.use",
+    "notifications.view",
   ]),
   employee: new Set<Permission>([
     "orders.view",
@@ -74,6 +82,8 @@ const rolePermissions: Record<Role, ReadonlySet<Permission>> = {
     "clients.create",
     "appointments.view",
     "appointments.manage",
+    "calculator.use",
+    "notifications.view",
   ]),
 };
 
@@ -125,7 +135,7 @@ export function canAccessScreen(
     home_dashboard: role === "employee" ? "orders.view" : "dashboard.full",
     home_caisse: "orders.view",
     home_boutique: "products.view",
-    calculator: "dashboard.full",
+    calculator: "calculator.use",
     statistics: "statistics.view",
     expenses: "expenses.manage",
     orders: "orders.view",
@@ -138,7 +148,7 @@ export function canAccessScreen(
     logs: "logs.view",
     tickets: "tickets.manage",
     settings: "backup.manage",
-    notifications: "logs.view",
+    notifications: "notifications.view",
   };
   return can(role, permissionByScreen[screen], custom);
 }
@@ -187,6 +197,11 @@ export const permissionGroups: PermissionGroup[] = [
     title: "Dashboard",
     permissions: [
       { key: "dashboard.full", label: "Voir le dashboard et les accès" },
+      { key: "calculator.use", label: "Utiliser la calculatrice" },
+      {
+        key: "notifications.view",
+        label: "Consulter le centre de notifications",
+      },
     ],
   },
   {

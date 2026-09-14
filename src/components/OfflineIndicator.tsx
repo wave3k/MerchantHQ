@@ -61,7 +61,13 @@ export function OfflineIndicator() {
         : colors.faint;
 
   return (
-    <View style={styles.row}>
+    <View
+      accessibilityLabel={label}
+      accessibilityLiveRegion="polite"
+      accessibilityRole="text"
+      accessible
+      style={styles.row}
+    >
       <View style={[styles.dot, { backgroundColor: dotColor }]} />
       <Text style={styles.text}>{label}</Text>
     </View>

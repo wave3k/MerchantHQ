@@ -88,4 +88,19 @@ describe("permissions", () => {
     expect(parsed?.has("orders.view")).toBe(true);
     expect(parsed?.has("inconnue" as Permission)).toBe(false);
   });
+
+  test("un caissier peut utiliser la calculatrice et voir les notifications", () => {
+    expect(can("cashier", "calculator.use")).toBe(true);
+    expect(canAccessScreen("cashier", "calculator")).toBe(true);
+    expect(canAccessScreen("cashier", "notifications")).toBe(true);
+    // Le centre de notifications reste distinct du journal d’activité.
+    expect(canAccessScreen("cashier", "logs")).toBe(false);
+  });
+
+  test("un employé peut aussi utiliser la calculatrice et les notifications", () => {
+    expect(can("employee", "calculator.use")).toBe(true);
+    expect(can("employee", "notifications.view")).toBe(true);
+    expect(canAccessScreen("employee", "calculator")).toBe(true);
+    expect(canAccessScreen("employee", "notifications")).toBe(true);
+  });
 });

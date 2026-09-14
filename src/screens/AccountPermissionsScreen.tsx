@@ -122,6 +122,11 @@ export function AccountPermissionsScreen({
   }
 
   async function submit() {
+    // Un compte sans personnalisation suit les permissions par défaut de son
+    // rôle : les accès ajoutés plus tard au rôle s'appliquent automatiquement.
+    const permissionsValue = customDirty
+      ? JSON.stringify([...selectedPermissions])
+      : null;
     if (editingUser) {
       setBusy(true);
       setError("");
@@ -129,7 +134,7 @@ export function AccountPermissionsScreen({
         await updateUserPermissions(
           db,
           editingUser.id,
-          JSON.stringify([...selectedPermissions]),
+          permissionsValue,
           user,
         );
         onDone();
@@ -162,7 +167,7 @@ export function AccountPermissionsScreen({
       email,
       role,
       password,
-      permissions: JSON.stringify([...selectedPermissions]),
+      permissions: permissionsValue,
     };
     setBusy(true);
     setError("");

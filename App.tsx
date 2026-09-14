@@ -8,10 +8,11 @@ import { SpaceGrotesk_600SemiBold } from "@expo-google-fonts/space-grotesk/600Se
 import { SpaceGrotesk_700Bold } from "@expo-google-fonts/space-grotesk/700Bold";
 import Icon from "./src/components/Icon";
 import type { IconName } from "./src/components/Icon";
+import { ErrorBoundary } from "./src/components/ErrorBoundary";
 import { useFonts } from "expo-font";
 import { SQLiteProvider, useSQLiteContext } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
-import Animated, { FadeIn } from "react-native-reanimated";
+import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 import {
   ActivityIndicator,
   Alert,
@@ -88,7 +89,7 @@ import { OrdersScreen } from "./src/screens/OrdersScreen";
 import { ProductsScreen } from "./src/screens/ProductsScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
 import { StatisticsScreen } from "./src/screens/StatisticsScreen";
-import { TeamScreen } from "./src/screens/TeamScreen";
+import { EmployeesScreen } from "./src/screens/EmployeesScreen";
 import { AccountPermissionsScreen } from "./src/screens/AccountPermissionsScreen";
 import { TicketDesignerScreen } from "./src/screens/TicketDesignerScreen";
 import { Screensaver } from "./src/components/Screensaver";
@@ -174,6 +175,7 @@ function Application() {
   const db = useSQLiteContext();
   const { width } = useWindowDimensions();
   const ecoMode = useEcoMode();
+  const reduceMotion = useReducedMotion();
   const [user, setUser] = useState<User | null>(null);
   const [sessionReady, setSessionReady] = useState<boolean | null>(null);
   const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
@@ -859,7 +861,7 @@ if (sessionReady === null) {
       content = <AttendanceScreen db={db} user={user} />;
       break;
     case "team":
-      content = <TeamScreen db={db} onNavigate={navigateTo} user={user} />;
+      content = <EmployeesScreen db={db} onNavigate={navigateTo} user={user} />;
       break;
     case "permissions":
       content = (
@@ -963,6 +965,8 @@ if (sessionReady === null) {
                 const active = mod.key === activeModule;
                 return (
                   <Pressable
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: active }}
                     key={mod.key}
                     onPress={() => switchModule(mod.key)}
                     style={[styles.compactModuleItem, active && styles.compactModuleItemActive]}
@@ -1001,6 +1005,8 @@ if (sessionReady === null) {
               const active = item.key === screen;
               return (
                 <Pressable
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
                   key={item.key}
                   onPress={() => navigateTo(item.key)}
                   style={[styles.compactItem, active && styles.compactItemActive]}
@@ -1133,7 +1139,7 @@ if (sessionReady === null) {
             saleFullscreen && styles.mainFullscreen,
           ]}
         >
-          {ecoMode ? (
+          {ecoMode || reduceMotion ? (
             <View key={screen} style={styles.screenSwitch}>
               {content}
             </View>
@@ -1244,23 +1250,25 @@ Base de données indisponible
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar style={activeTheme === "dark" ? "light" : "dark"} />
-      <SQLiteProvider
-        databaseName="commerce-manager-public.db"
-        onError={(error) => {
-          console.error("SQLite initialization failed", error);
-          setDatabaseError(error.message);
-          Alert.alert(
-            "Base de données indisponible",
-            error.message,
-          );
-        }}
-        onInit={initializeDatabase}
-      >
-        <Application />
-      </SQLiteProvider>
-    </SafeAreaView>
+    <ErrorBoundary>
+      <SafeAreaView style={styles.safe}>
+        <StatusBar style={activeTheme === "dark" ? "light" : "dark"} />
+        <SQLiteProvider
+          databaseName="commerce-manager-public.db"
+          onError={(error) => {
+            console.error("SQLite initialization failed", error);
+            setDatabaseError(error.message);
+            Alert.alert(
+              "Base de données indisponible",
+              error.message,
+            );
+          }}
+          onInit={initializeDatabase}
+        >
+          <Application />
+        </SQLiteProvider>
+      </SafeAreaView>
+    </ErrorBoundary>
   );
 }
 

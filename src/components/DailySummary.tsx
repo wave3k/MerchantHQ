@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import Animated, { FadeIn } from "react-native-reanimated";
+import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 import type { SQLiteDatabase } from "expo-sqlite";
 import Icon from "./Icon";
 import { useThemedStyles, colors, fonts, radius, space } from "../theme";
@@ -15,6 +15,7 @@ interface DailySummaryProps {
 // ou dès qu'il y a des ventes aujourd'hui. Ouvre une synthèse de la journée.
 export function DailySummary({ db }: DailySummaryProps) {
   const styles = useThemedStyles(createStyles);
+  const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [show, setShow] = useState(false);
   const [data, setData] = useState<{
@@ -48,7 +49,7 @@ export function DailySummary({ db }: DailySummaryProps) {
 
   return (
     <>
-      <Animated.View entering={FadeIn.duration(400)}>
+      <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(400)}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Voir le résumé du jour"
@@ -77,7 +78,7 @@ export function DailySummary({ db }: DailySummaryProps) {
                   })}
                 </Text>
               </View>
-              <Pressable onPress={() => setOpen(false)} style={styles.close} accessibilityRole="button">
+              <Pressable accessibilityLabel="Fermer le résumé" onPress={() => setOpen(false)} style={styles.close} accessibilityRole="button">
                 <Icon name="X" size={20} color={colors.ink2} />
               </Pressable>
             </View>
@@ -96,7 +97,7 @@ export function DailySummary({ db }: DailySummaryProps) {
                 </View>
               ))}
             </ScrollView>
-            <Pressable onPress={() => setOpen(false)} style={styles.done}>
+            <Pressable accessibilityRole="button" onPress={() => setOpen(false)} style={styles.done}>
               <Text style={styles.doneText}>Fermer</Text>
             </Pressable>
           </View>

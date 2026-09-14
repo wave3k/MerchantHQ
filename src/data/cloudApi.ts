@@ -566,8 +566,20 @@ export async function restoreCloudBackup(
       `Cette copie vient d’une version plus récente (${update.appVersion}). Mettez MerchantHQ à jour.`,
     );
   }
-  const payload = await getBackupPayload(update.accountId, getCurrentShopId() ?? "", update.backupId);
-  const restored = await restoreBackupForShop(db, JSON.parse(payload));
+  const payload = await getBackupPayload(
+    update.accountId,
+    getCurrentShopId() ?? "",
+    update.backupId,
+  );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    throw new Error(
+      "Cette sauvegarde est illisible ou corrompue. Réessayez depuis un autre appareil.",
+    );
+  }
+  const restored = await restoreBackupForShop(db, parsed);
   await writeState(db, LAST_RESTORED_BACKUP_ID_KEY, update.backupId);
   await writeState(db, LAST_RESTORED_AT_KEY, update.snapshotAt);
   await writeState(db, PENDING_DATE_KEY, null);

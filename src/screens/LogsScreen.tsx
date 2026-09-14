@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from "expo-sqlite";
 import {
+  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -51,7 +52,16 @@ export function LogsScreen({ db }: LogsScreenProps) {
   const [selected, setSelected] = useState<ActivityLog | null>(null);
 
   useEffect(() => {
-    void listLogs(db).then(setLogs);
+    void listLogs(db)
+      .then(setLogs)
+      .catch((caught) =>
+        Alert.alert(
+          "Chargement impossible",
+          caught instanceof Error
+            ? caught.message
+            : "Le journal d’activité n’a pas pu être chargé.",
+        ),
+      );
   }, [db]);
 
   const filtered = useMemo(() => {
@@ -105,6 +115,8 @@ export function LogsScreen({ db }: LogsScreenProps) {
         <View style={styles.timeline}>
           {filtered.map((log) => (
             <Pressable
+              accessibilityLabel={log.description}
+              accessibilityRole="button"
               key={log.id}
               onPress={() => setSelected(log)}
               style={({ pressed }) => [
